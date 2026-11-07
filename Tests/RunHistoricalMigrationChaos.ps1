@@ -139,7 +139,7 @@ try {
     Need ($LASTEXITCODE -eq 0) 'LocalDB failed to start.'
     $info=@(& $localExe info MSSQLLocalDB 2>&1)
     $pipeMatch=[regex]::Match(($info -join [Environment]::NewLine),
-        '(?:np:)?(\\\.\\pipe\\LOCALDB#[A-Za-z0-9]+\\tsql\\query)')
+        '(?:np:)?(\\\\\.\\pipe\\LOCALDB#[A-Za-z0-9]+\\tsql\\query)')
     Need $pipeMatch.Success 'Could not resolve LocalDB named pipe.'
     $script:pipe='np:'+$pipeMatch.Groups[1].Value
     $mdf=Quote (Join-Path $root 'FMSC_DB.mdf')
