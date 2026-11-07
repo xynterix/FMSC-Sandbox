@@ -35,8 +35,14 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$EVENT_NAME" == "push" ]]; then
-            sha="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
-              'https://api.github.com/repos/farhan2166-creator/FMSC-Source/pulls/118' | jq -r '.head.sha')"
+            pr="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
+              'https://api.github.com/repos/farhan2166-creator/FMSC-Source/pulls/118')"
+            if [[ "$(jq -r '.merged' <<< "$pr")" == 'true' ]]; then
+              sha="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
+                'https://api.github.com/repos/farhan2166-creator/FMSC-Source/branches/main' | jq -r '.commit.sha')"
+            else
+              sha="$(jq -r '.head.sha' <<< "$pr")"
+            fi
           else
             sha="$INPUT_SHA"
           fi
@@ -90,6 +96,7 @@ jobs:
     env:
       FMSC_DISPOSABLE_INSTALL: approved-synthetic-only
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      FMSC_TESTED_SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
     steps:
       - name: Checkout exact public Source SHA
         uses: actions/checkout@v7
