@@ -96,8 +96,10 @@ IF EXISTS(SELECT 1 FROM dbo.Students) OR EXISTS(SELECT 1 FROM dbo.Users)
   foreach ($name in @('dbo.Staff','dbo.Families','dbo.FamilyMembers','dbo.FeePayments',
     'dbo.Enrollments','dbo.StudentGuardianCommunication','comm.Contact',
     'comm.Message','comm.Campaign','comm.Attempt')) {
-    $sql="IF OBJECT_ID(N'$name',N'U') IS NOT NULL AND EXISTS(SELECT 1 FROM $name) THROW 51002,'Fixture has unexpected operational records',1;"
-    Run $db $sql
+    $id=(Query $db "SELECT OBJECT_ID(N'$name',N'U');").Tables[0].Rows[0][0]
+    if ($id -ne [DBNull]::Value) {
+      Run $db "IF EXISTS(SELECT 1 FROM $name) THROW 51002,'Fixture has unexpected operational records',1;"
+    }
   }
   Run $db 'DBCC CHECKDB WITH NO_INFOMSGS;'
   # Rebuild metadata that DacFx exports as text or omits from its data-free
