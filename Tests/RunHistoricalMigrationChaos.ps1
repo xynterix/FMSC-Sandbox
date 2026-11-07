@@ -35,8 +35,8 @@ foreach ($f in $files) {
         throw 'CHAOS REFUSED: original fixture checksum, size or location invalid.'
     }
 }
-$version=[regex]::Match((Get-Content (Join-Path $source 'DatabaseHelper.cs') -Raw),
-    'RequiredDatabaseSchemaVersion\s*=\s*"([0-9]+)"')
+$version=[regex]::Match((Get-Content (Join-Path $source 'Installer/core.ps1') -Raw),
+    '(?m)^\$DatabaseVersion = ''([0-9]+)''\r?$')
 if (-not $version.Success) { throw 'CHAOS REFUSED: application schema not declared.' }
 $targetVersion=[int]$version.Groups[1].Value
 if ($targetVersion -lt 7 -or $targetVersion -gt 9999) {

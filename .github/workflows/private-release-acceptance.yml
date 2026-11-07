@@ -49,14 +49,12 @@ jobs:
             echo 'Refusing anything other than exact current Source/main SHA for private fixture execution.'
             exit 1
           fi
-          # Resolve target from the pinned public Source SHA, not user input.
-          # Both independently packaged installer versions must agree.
+          # Resolve the only authoritative schema from core.ps1 in the
+          # exact pinned public Source SHA, never an operator input.
           raw="https://raw.githubusercontent.com/farhan2166-creator/FMSC-Source/$sha"
-          target="$(curl -fsSL --retry 3 "$raw/DatabaseHelper.cs" |
-            sed -nE 's/.*RequiredDatabaseSchemaVersion[[:space:]]*=[[:space:]]*"([0-9]+)".*/\1/p')"
-          installer="$(curl -fsSL --retry 3 "$raw/Installer/core.ps1" |
+          target="$(curl -fsSL --retry 3 "$raw/Installer/core.ps1" |
             grep -E '^\$DatabaseVersion[[:space:]]*=' | grep -Eo '[0-9]+' | head -1)"
-          [[ "$target" =~ ^[1-9][0-9]*$ && "$target" == "$installer" ]] &&
+          [[ "$target" =~ ^[1-9][0-9]*$ ]] &&
             (( target >= 7 && target <= 9999 )) || {
               echo 'Refusing invalid or inconsistent Source migration target.'; exit 1;
             }

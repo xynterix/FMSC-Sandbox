@@ -126,8 +126,8 @@ BEGIN
     SYSUTCDATETIME(),NULL,SYSUTCDATETIME());
 END;
 '@
-  $helper=Get-Content -LiteralPath (Join-Path $source 'DatabaseHelper.cs') -Raw
-  $versionMatch=[regex]::Match($helper,'RequiredDatabaseSchemaVersion\s*=\s*"([0-9]+)"')
+  $core=Get-Content -LiteralPath (Join-Path $source 'Installer/core.ps1') -Raw
+  $versionMatch=[regex]::Match($core,'(?m)^\$DatabaseVersion = ''([0-9]+)''\r?$')
   if (-not $versionMatch.Success) { throw 'Cannot determine current required schema.' }
   $target=[int]$versionMatch.Groups[1].Value
   if ($target -lt 7) { throw 'Target schema unexpectedly below permanent v7 baseline.' }
