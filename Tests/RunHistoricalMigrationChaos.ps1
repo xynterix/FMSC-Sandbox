@@ -100,6 +100,12 @@ function Apply([string]$scenario) {
     $output=@(& $ps @arguments 2>&1 | ForEach-Object { [string]$_ })
     $exitCode=[int]$LASTEXITCODE
     Write-Host "CHAOS SCENARIO: $scenario / migration runner exit $exitCode"
+    if ($exitCode -ne 0) {
+        foreach ($line in @($output | Where-Object {
+            $_ -match '^(FAILED:|Missing required migration|Migration [0-9]+ failed|SQL command failed)' } | Select-Object -Last 4)) {
+            Write-Host ('CHAOS SYNTHETIC DIAGNOSTIC: '+$line.Substring(0,[Math]::Min(300,$line.Length)))
+        }
+    }
     return [pscustomobject]@{ExitCode=$exitCode;Output=($output -join [Environment]::NewLine)}
 }
 function VerifyBackup([string]$path) {
