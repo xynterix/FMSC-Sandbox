@@ -55,7 +55,7 @@ jobs:
           target="$(curl -fsSL --retry 3 "$raw/DatabaseHelper.cs" |
             sed -nE 's/.*RequiredDatabaseSchemaVersion[[:space:]]*=[[:space:]]*"([0-9]+)".*/\1/p')"
           installer="$(curl -fsSL --retry 3 "$raw/Installer/core.ps1" |
-            grep -E '^\\$DatabaseVersion[[:space:]]*=' | grep -Eo '[0-9]+' | head -1)"
+            grep -E '^\$DatabaseVersion[[:space:]]*=' | grep -Eo '[0-9]+' | head -1)"
           [[ "$target" =~ ^[1-9][0-9]*$ && "$target" == "$installer" ]] &&
             (( target >= 7 && target <= 9999 )) || {
               echo 'Refusing invalid or inconsistent Source migration target.'; exit 1;
