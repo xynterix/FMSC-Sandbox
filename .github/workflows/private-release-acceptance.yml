@@ -53,9 +53,16 @@ jobs:
       matrix:
         schema: [3, 7]
     steps:
-      - name: Checkout private fixture harness (no saved credential)
+      - name: Checkout private test harness without LFS hydration
         uses: actions/checkout@v7
         with:
+          persist-credentials: false
+      - name: Checkout exact immutable fixture commit with Git LFS
+        uses: actions/checkout@v7
+        with:
+          repository: farhan2166-creator/FMSC-Sandbox
+          ref: 5a8c5130c9d7b76552bb73a753cd44c4d192d2d0
+          path: fmsc-sandbox
           lfs: true
           persist-credentials: false
       - name: Checkout exact public Source SHA
@@ -70,7 +77,7 @@ jobs:
         run: |
           ./Tests/RunSandboxSqlContract.ps1 -Schema ${{ matrix.schema }} `
             -SourceRoot (Join-Path $env:GITHUB_WORKSPACE 'fmsc-source') `
-            -FixtureRoot $env:GITHUB_WORKSPACE
+            -FixtureRoot (Join-Path $env:GITHUB_WORKSPACE 'fmsc-sandbox')
 
   real-installer:
     needs: [resolve, sql-contract]
@@ -111,6 +118,9 @@ jobs:
           ./Tools/RunDisposableWindowsInstall.ps1 -ProjectDirectory . -Level3 `
             -FixtureRoot (Join-Path $env:GITHUB_WORKSPACE 'fmsc-sandbox') `
             -FixtureSchema ${{ matrix.schema }}
+      - name: Restore pinned SQLPackage tooling for independent billing and recovery regressions
+        shell: pwsh
+        run: dotnet tool restore --tool-manifest Tests/LifecycleSqlChecks/.config/dotnet-tools.json
       - name: SQL billing and update-recovery regressions
         shell: pwsh
         timeout-minutes: 10
