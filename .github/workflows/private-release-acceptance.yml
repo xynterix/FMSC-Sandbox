@@ -148,10 +148,49 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  # Negative testing uses a different disposable copy of the same frozen
+  # schema-3 fixture. Missing migrations and deliberately failing DDL must
+  # preserve version/backup before real Source migrations can resume.
+  # No attestation token or publishing token is available to this job.
+  migration-chaos:
+    needs: [resolve, sql-contract]
+    runs-on: windows-2022
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      FMSC_DISPOSABLE_INSTALL: approved-synthetic-only
+    steps:
+      - name: Checkout private synthetic chaos harness
+        uses: actions/checkout@v7
+        with:
+          path: sandbox-harness
+          persist-credentials: false
+      - name: Checkout immutable schema-3 fixture with Git LFS
+        uses: actions/checkout@v7
+        with:
+          repository: farhan2166-creator/FMSC-Sandbox
+          ref: 5a8c5130c9d7b76552bb73a753cd44c4d192d2d0
+          path: fmsc-sandbox
+          lfs: true
+          persist-credentials: false
+      - name: Checkout exact tested Source SHA
+        uses: actions/checkout@v7
+        with:
+          repository: farhan2166-creator/FMSC-Source
+          ref: ${{ needs.resolve.outputs.source_sha }}
+          path: fmsc-source
+          persist-credentials: false
+      - name: Prove rollback, backup restore and genuine schema-7 resumption
+        shell: pwsh
+        timeout-minutes: 40
+        run: |
+          & ./sandbox-harness/Tests/RunHistoricalMigrationChaos.ps1 -SourceRoot (Join-Path $env:GITHUB_WORKSPACE 'fmsc-source') -FixtureRoot (Join-Path $env:GITHUB_WORKSPACE 'fmsc-sandbox')
+
   # No Source checkout or arbitrary Source scripts in this token-bearing job.
   # Status can be issued only for the exact current Source/main commit.
   attest:
-    needs: [resolve, sql-contract, real-installer]
+    needs: [resolve, sql-contract, real-installer, migration-chaos]
     if: ${{ always() && github.ref == 'refs/heads/main' && needs.resolve.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -159,6 +198,7 @@ jobs:
       SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
       SQL_RESULT: ${{ needs.sql-contract.result }}
       INSTALL_RESULT: ${{ needs.real-installer.result }}
+      CHAOS_RESULT: ${{ needs.migration-chaos.result }}
       ATTEST_TOKEN: ${{ secrets.FMSC_SOURCE_ATTEST_TOKEN }}
       RUN_URL: https://github.com/farhan2166-creator/FMSC-Sandbox/actions/runs/${{ github.run_id }}
     steps:
@@ -175,7 +215,7 @@ jobs:
           [[ -n "$ATTEST_TOKEN" ]] || { echo 'FMSC_SOURCE_ATTEST_TOKEN not configured; approval withheld.'; exit 1; }
           state='failure'
           description='MDF/LDF v3+v7 real acceptance FAILED or incomplete'
-          if [[ "$SQL_RESULT" == 'success' && "$INSTALL_RESULT" == 'success' ]]; then
+          if [[ "$SQL_RESULT" == 'success' && "$INSTALL_RESULT" == 'success' && "$CHAOS_RESULT" == 'success' ]]; then
             state='success'
             description='MDF/LDF v3+v7 SQL+installer PASS (fixture 5a8c5130)'
           fi
