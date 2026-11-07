@@ -5,20 +5,24 @@
     {
       "id": "historical-v3",
       "schema": 3,
-      "status": "pending-upload",
+      "status": "extracted-schema-only-pending-sql-validation",
       "mdf": "Database/v3/FMSC_DB.mdf",
       "ldf": "Database/v3/FMSC_DB_log.ldf",
-      "mdfSha256": null,
-      "ldfSha256": null
+      "mdfSha256": "27bd4ffbd1258212a6af4028a61820c490d0cb86d736d20c9ec4df2184cdf00d",
+      "ldfSha256": "8a5cb6d8b1301fa7e00ac2109ee4a9c2098c738eaba58686fed39637cd594d4b",
+      "sourceZip": "FMSC-schema-v3.zip",
+      "sourceZipSha256": "c4a8b46e08ff21df8ee9850fbed44adb4c8dddd88b8415523c0519db17e6920b"
     },
     {
       "id": "fictional-v7",
       "schema": 7,
-      "status": "pending-upload",
+      "status": "extracted-schema-only-pending-sql-validation",
       "mdf": "Database/v7/FMSC_DB.mdf",
       "ldf": "Database/v7/FMSC_DB_log.ldf",
-      "mdfSha256": null,
-      "ldfSha256": null
+      "mdfSha256": "d3e80829aa11f5fb8cef546a982324c8fcf100d794db044a3b5a476163cc693c",
+      "ldfSha256": "373d6ac5a6b16cb297dce3c659bedc7c0f79ff08d14985ee18589a8d4a6d70cd",
+      "sourceZip": "FMSC-schema-v7.zip",
+      "sourceZipSha256": "609f669364403003d16ed77a74e78202e2430bd2dd3d777f78706074007a7616"
     }
   ],
   "latestSchema": "Schema/Latest.dacpac",
