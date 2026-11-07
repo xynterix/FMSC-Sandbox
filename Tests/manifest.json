@@ -25,6 +25,5 @@
       "sourceZipSha256": "609f669364403003d16ed77a74e78202e2430bd2dd3d777f78706074007a7616"
     }
   ],
-  "latestSchema": "Schema/Latest.dacpac",
-  "notes": "Use only detached, entirely fictional database pairs. Populate SHA-256 only after reviewing uploaded binaries."
+  "notes": "Only permanent synthetic MDF/LDF baseline pairs. Source fmsc.dacpac is manual inspection-only and must never be used for workflow acceptance."
 }
