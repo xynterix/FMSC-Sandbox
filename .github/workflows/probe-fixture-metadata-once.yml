@@ -123,7 +123,44 @@ jobs:
               if ([int]$check.Tables[0].Rows[0][0] -ne 0) { throw "Schema $schema fails the complete structural compatibility contract" }
               if ($check.Tables.Count -gt 1) {
                 foreach ($row in $check.Tables[1].Rows) { Write-Host ("  REQUIREMENT: "+$row[0].ToString()) }
+                $moduleSource=Get-Content -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'fmsc-source/Services/Communication/CommunicationSchemaContract.cs') -Raw
+              $moduleMatch=[regex]::Match($moduleSource,'(?s)await using var structure=new SqlCommand\("""\s*(.*?)\s*""",connection\)')
+              if (-not $moduleMatch.Success) { throw 'Cannot locate communication structure SQL' }
+              $moduleStruct=Query $db $moduleMatch.Groups[1].Value
+              Write-Host "SCHEMA $schema COMM STRUCTURE RESULT: $($moduleStruct.Tables[0].Rows[0][0])"
+              $sqlModel=Get-Content -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'fmsc-source/Services/Communication/Schema.sql') -Raw
+              $must=@([regex]::Matches($sqlModel,'(?im)^\s*CREATE (PROCEDURE|FUNCTION) comm\.\[?(\w+)\]?') | ForEach-Object { $_.Groups[2].Value } | Sort-Object -Unique)
+              $have=Query $db 'SELECT name FROM sys.objects WHERE schema_id=SCHEMA_ID(N''comm'') AND type IN (N''P'',N''FN'',N''IF'',N''TF'');'
+              $names=@($have.Tables[0].Rows | ForEach-Object { $_[0].ToString() })
+              $missing=@($must | Where-Object { $_ -notin $names })
+              Write-Host "SCHEMA $schema COMM MISSING ROUTINES ($($missing.Count)): $($missing -join ',')"
+              $parts=[ordered]@{
+                module='(SELECT COUNT(*) FROM comm.Module WHERE Version=1)=1'
+                claimToken="COL_LENGTH(N'comm.Message',N'ClaimToken')=16"
+                simulation="COL_LENGTH(N'comm.Message',N'Simulation')=1"
+                providerReference="COL_LENGTH(N'comm.Message',N'ProviderReference')=200"
+                consentSource="COL_LENGTH(N'comm.Contact',N'ConsentSource')=400"
+                familyFk="EXISTS(SELECT 1 FROM sys.foreign_keys F JOIN sys.foreign_key_columns K ON K.constraint_object_id=F.object_id JOIN sys.columns C ON C.object_id=K.parent_object_id AND C.column_id=K.parent_column_id WHERE F.parent_object_id=OBJECT_ID(N'comm.Contact') AND C.name=N'FamilyId' AND F.delete_referential_action=2 AND F.is_disabled=0 AND F.is_not_trusted=0)"
+                contactIdentityIndex="EXISTS(SELECT 1 FROM sys.indexes I JOIN sys.index_columns K ON K.object_id=I.object_id AND K.index_id=I.index_id JOIN sys.columns C ON C.object_id=K.object_id AND C.column_id=K.column_id WHERE I.object_id=OBJECT_ID(N'comm.Contact') AND I.name=N'UX_CommContact_Identity' AND I.is_unique=1 AND C.name=N'OriginalFamilyId' AND K.key_ordinal>0)"
+                originalFamilyId="COL_LENGTH(N'comm.Contact',N'OriginalFamilyId')=4"
+                revision="COL_LENGTH(N'comm.Contact',N'Revision')=8"
+                contentHash="COL_LENGTH(N'comm.Campaign',N'ContentHash')=32"
+                pendingReceipt="OBJECT_ID(N'comm.PendingReceipt',N'U') IS NOT NULL"
+                enrollmentId="COL_LENGTH(N'comm.Message',N'EnrollmentId')=4"
+                ruleBaseline="OBJECT_ID(N'comm.RuleBaseline',N'U') IS NOT NULL"
+                dispatchActor="COL_LENGTH(N'comm.Campaign',N'DispatchActor')=4"
+                requestHash="COL_LENGTH(N'comm.Campaign',N'RequestHash')=32"
+                nextSendUtc="COL_LENGTH(N'comm.Settings',N'NextSendUtc') IS NOT NULL"
+                messageIndexes="(SELECT COUNT(*) FROM sys.indexes WHERE object_id=OBJECT_ID(N'comm.Message') AND is_unique=1 AND name IN(N'UX_CommMessage_Recipient',N'UX_CommMessage_Provider'))=2"
+                campaignIndex="EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'comm.Campaign') AND name=N'UX_CommCampaign_Event' AND is_unique=1)"
+                trustedFk="NOT EXISTS(SELECT 1 FROM sys.foreign_keys WHERE schema_id=SCHEMA_ID(N'comm') AND (is_disabled=1 OR is_not_trusted=1))"
+                trustedCheck="NOT EXISTS(SELECT 1 FROM sys.check_constraints WHERE schema_id=SCHEMA_ID(N'comm') AND (is_disabled=1 OR is_not_trusted=1))"
               }
+              foreach ($item in $parts.GetEnumerator()) {
+                $flag=Query $db "SELECT CASE WHEN $($item.Value) THEN 1 ELSE 0 END;"
+                if ([int]$flag.Tables[0].Rows[0][0] -ne 1) { Write-Host "SCHEMA $schema COMM FAIL: $($item.Key)" }
+              }
+            }
             }
           } finally {
             try { [void](Query master "ALTER DATABASE [$db] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; EXEC sys.sp_detach_db @dbname=N'$db';") }
