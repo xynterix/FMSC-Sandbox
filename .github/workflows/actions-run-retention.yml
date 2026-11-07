@@ -25,14 +25,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - name: Retain three completed runs per workflow
+      - name: Retain twenty completed runs per workflow
         uses: actions/github-script@v9
         env:
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const retain = 3;
+            const retain = 20;
             const dryRun = process.env.DRY_RUN === 'true';
             const { owner, repo } = context.repo;
             // Fetch every page before deleting: deleting while paginating skips runs.
