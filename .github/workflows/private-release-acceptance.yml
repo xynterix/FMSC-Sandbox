@@ -224,8 +224,8 @@ jobs:
           api='https://api.github.com/repos/farhan2166-creator/FMSC-Source'
           main="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' "$api/branches/main" | jq -r '.commit.sha')"
           if [[ "$SOURCE_SHA" != "$main" ]]; then
-            echo 'No release attestation: tested Source commit is not the current main SHA.'
-            exit 0
+            echo 'Acceptance INVALIDATED: Source/main changed during testing; no attestation granted.'
+            exit 1
           fi
           [[ -n "$ATTEST_TOKEN" ]] || { echo 'FMSC_SOURCE_ATTEST_TOKEN not configured; approval withheld.'; exit 1; }
           state='failure'
