@@ -139,7 +139,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: fmsc-private-acceptance-${{ github.run_id }}-v${{ matrix.schema }}
+          name: fmsc-private-acceptance-${{ github.run_id }}-attempt${{ github.run_attempt }}-v${{ matrix.schema }}
           path: |
             ${{ runner.temp }}/fmsc-install-evidence/report.json
             ${{ runner.temp }}/fmsc-install-evidence/summary.md
