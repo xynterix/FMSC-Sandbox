@@ -67,6 +67,13 @@ jobs:
           $lp=(Join-Path $root 'FMSC_DB_log.ldf').Replace("'","''")
           [void](Query master "CREATE DATABASE [$db] ON (FILENAME=N'$mp'),(FILENAME=N'$lp') FOR ATTACH;")
           try {
+            $state=Query master "SELECT is_read_only FROM sys.databases WHERE name=N'$db';"
+            $ro=[int]$state.Tables[0].Rows[0][0]
+            Write-Host "SCHEMA $schema SOURCE DATABASE READ_ONLY=$ro"
+            if ($ro -eq 1) {
+              [void](Query master "ALTER DATABASE [$db] SET READ_WRITE WITH ROLLBACK IMMEDIATE;")
+              Write-Host "SCHEMA $schema DISPOSABLE COPY CHANGED TO READ_WRITE"
+            }
             $sql=@'
           SET NOCOUNT ON;
           SELECT name,CONVERT(nvarchar(30),SQL_VARIANT_PROPERTY(value,'BaseType')) AS BaseType
