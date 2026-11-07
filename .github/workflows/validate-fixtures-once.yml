@@ -1,0 +1,75 @@
+name: 00 - One-time real SQL fixture acceptance
+
+on:
+  push:
+    paths: ['.github/workflows/validate-fixtures-once.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Source PR118 real installer / schema ${{ matrix.schema }}
+    runs-on: windows-2022
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        schema: [3, 7]
+    env:
+      FMSC_DISPOSABLE_INSTALL: approved-synthetic-only
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+    steps:
+      - name: Checkout audited public FMSC source PR commit
+        uses: actions/checkout@v7
+        with:
+          repository: farhan2166-creator/FMSC-Source
+          ref: 016f4b85d5c0f49e91ec9e02a07a338d4452df13
+          persist-credentials: false
+
+      - name: Checkout pinned private FMSC sandbox fixtures with Git LFS
+        uses: actions/checkout@v7
+        with:
+          repository: farhan2166-creator/FMSC-Sandbox
+          ref: 5a8c5130c9d7b76552bb73a753cd44c4d192d2d0
+          path: fmsc-sandbox
+          lfs: true
+          persist-credentials: false
+
+      - name: Set up .NET 8 SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Run real source installer on approved private historical/current MDF-LDF
+        shell: pwsh
+        timeout-minutes: 45
+        run: |
+          .\Tools\RunDisposableWindowsInstall.ps1 -ProjectDirectory . -Level3 `
+            -FixtureRoot (Join-Path $env:GITHUB_WORKSPACE 'fmsc-sandbox') `
+            -FixtureSchema ${{ matrix.schema }}
+
+      - name: Billing and SQL recovery regression
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          .\Tools\TestAutomaticBilling.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Billing regression failed.' }
+          .\Tools\TestUpdateRecoverySql.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'SQL recovery regression failed.' }
+
+      - name: Publish sanitized summary only
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sandbox-fixture-acceptance-${{ github.run_id }}-v${{ matrix.schema }}
+          path: |
+            ${{ runner.temp }}/fmsc-install-evidence/report.json
+            ${{ runner.temp }}/fmsc-install-evidence/summary.md
+          if-no-files-found: warn
+          retention-days: 3
