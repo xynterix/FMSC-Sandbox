@@ -1,0 +1,26 @@
+{
+  "format": "fmsc-sandbox-fixtures/v1",
+  "fixturePolicy": "permanent-synthetic-snapshots",
+  "fixtures": [
+    {
+      "id": "historical-v3",
+      "schema": 3,
+      "status": "pending-upload",
+      "mdf": "Database/v3/FMSC_DB.mdf",
+      "ldf": "Database/v3/FMSC_DB_log.ldf",
+      "mdfSha256": null,
+      "ldfSha256": null
+    },
+    {
+      "id": "fictional-v7",
+      "schema": 7,
+      "status": "pending-upload",
+      "mdf": "Database/v7/FMSC_DB.mdf",
+      "ldf": "Database/v7/FMSC_DB_log.ldf",
+      "mdfSha256": null,
+      "ldfSha256": null
+    }
+  ],
+  "latestSchema": "Schema/Latest.dacpac",
+  "notes": "Use only detached, entirely fictional database pairs. Populate SHA-256 only after reviewing uploaded binaries."
+}
