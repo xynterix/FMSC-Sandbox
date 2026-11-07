@@ -115,7 +115,7 @@ try {
         $target=Join-Path $root ([IO.Path]::GetFileName($origin))
         Copy-Item -LiteralPath $origin -Destination $target
         (Get-Item $target).IsReadOnly=$false
-        Need ((Get-FileHash $target -Algorithm SHA256).Hash -ine $f.sha) 'Writable copy differs from verified immutable source.'
+        Need ((Get-FileHash $target -Algorithm SHA256).Hash -ieq $f.sha) 'Writable copy differs from verified immutable source.'
     }
     Copy-Item (Join-Path $source 'DatabaseHelper.cs') -Destination $harness
     Copy-Item (Join-Path $source 'Installer/core.ps1') -Destination (Join-Path $harness 'Installer/core.ps1')
@@ -232,7 +232,7 @@ END;
         if ($restored) { DropOwned $restore }
         if ($attached) { DropOwned $db }
         foreach ($f in $files) {
-            Need ((Get-FileHash (Join-Path $fixtures $f.path) -Algorithm SHA256).Hash -ine $f.sha) 'Original LFS fixture checksum changed.'
+            Need ((Get-FileHash (Join-Path $fixtures $f.path) -Algorithm SHA256).Hash -ieq $f.sha) 'Original LFS fixture checksum changed.'
         }
         if ($ownsRoot) { Remove-Item -LiteralPath $root -Recurse -Force }
         if ($ownsHarness) { Remove-Item -LiteralPath $harness -Recurse -Force }
