@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       source_sha:
-        description: 'Exact 40-character public FMSC-Source commit SHA to test'
+        description: 'Exact Source/main SHA (or owner-controlled PR118 head during review)'
         required: true
         type: string
   # Automatically proof-test this workflow on edits; push tests latest PR #118 head
@@ -47,6 +47,21 @@ jobs:
             sha="$INPUT_SHA"
           fi
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid exact Source SHA'; exit 1; }
+          main_sha="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/farhan2166-creator/FMSC-Source/branches/main' | jq -r '.commit.sha')"
+          if [[ "$sha" != "$main_sha" ]]; then
+            # Only the original same-repository owner PR head was eligible
+            # for premerge testing. Never run arbitrary public/fork code with
+            # access to private fixture binaries, even without a secret.
+            pr="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
+              'https://api.github.com/repos/farhan2166-creator/FMSC-Source/pulls/118')"
+            if [[ "$(jq -r '.merged' <<< "$pr")" != 'false' ||
+                  "$(jq -r '.head.repo.full_name' <<< "$pr")" != 'farhan2166-creator/FMSC-Source' ||
+                  "$(jq -r '.head.sha' <<< "$pr")" != "$sha" ]]; then
+              echo 'Refusing unreviewed public Source SHA for private fixture execution.'
+              exit 1
+            fi
+          fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "Testing Source SHA: $sha" >> "$GITHUB_STEP_SUMMARY"
 
