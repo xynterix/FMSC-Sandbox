@@ -1,0 +1,106 @@
+name: 00 - Focused SQL fixture schema diagnosis
+
+on:
+  push:
+    paths:
+      - '.github/workflows/probe-fixture-metadata-once.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  fixture:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        schema: [3, 7]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          lfs: true
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: farhan2166-creator/FMSC-Source
+          ref: a71dddb3f0fc29bec1c15aa61deccd7e5c77542b
+          path: fmsc-source
+          persist-credentials: false
+      - name: Inspect SQL property types and v7 structural contract on disposable copy
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Add-Type -AssemblyName System.Data
+          $schema=[int]'${{ matrix.schema }}'
+          $db="FMSC_DIAG_$schema"
+          $root=Join-Path $env:RUNNER_TEMP "FMSC_DIAG_$schema"
+          New-Item -ItemType Directory -Path $root | Out-Null
+          foreach ($fn in @('FMSC_DB.mdf','FMSC_DB_log.ldf')) {
+            $src=Join-Path $env:GITHUB_WORKSPACE "Database/v$schema/$fn"
+            $dest=Join-Path $root $fn
+            Copy-Item -LiteralPath $src -Destination $dest
+            (Get-Item -LiteralPath $dest).IsReadOnly=$false
+          }
+          $localdb=Get-Command SqlLocalDB.exe -ErrorAction SilentlyContinue
+          if (-not $localdb) { $ldExe=Join-Path $env:ProgramFiles 'Microsoft SQL Server/160/Tools/Binn/SqlLocalDB.exe' }
+          else { $ldExe=$localdb.Source }
+          if (-not (Test-Path -LiteralPath $ldExe)) { throw 'LocalDB not installed' }
+          & $ldExe start MSSQLLocalDB
+          if ($LASTEXITCODE -ne 0) { throw 'LocalDB start failed' }
+
+          function Query([string]$database,[string]$query,[string]$json='') {
+            $conn=[System.Data.SqlClient.SqlConnection]::new("Data Source=(localdb)\MSSQLLocalDB;Initial Catalog=$database;Integrated Security=True;Encrypt=False")
+            try {
+              $conn.Open()
+              $cmd=$conn.CreateCommand()
+              $cmd.CommandText=$query
+              $cmd.CommandTimeout=120
+              if ($json) { [void]$cmd.Parameters.Add('@Requirements',[System.Data.SqlDbType]::NVarChar,-1); $cmd.Parameters['@Requirements'].Value=$json }
+              $ds=[System.Data.DataSet]::new()
+              $ad=[System.Data.SqlClient.SqlDataAdapter]::new($cmd)
+              [void]$ad.Fill($ds)
+              return $ds
+            } finally { $conn.Dispose() }
+          }
+          $mp=(Join-Path $root 'FMSC_DB.mdf').Replace("'","''")
+          $lp=(Join-Path $root 'FMSC_DB_log.ldf').Replace("'","''")
+          [void](Query master "CREATE DATABASE [$db] ON (FILENAME=N'$mp'),(FILENAME=N'$lp') FOR ATTACH;")
+          try {
+            $sql=@'
+          SET NOCOUNT ON;
+          SELECT name,CONVERT(nvarchar(30),SQL_VARIANT_PROPERTY(value,'BaseType')) AS BaseType
+          FROM sys.extended_properties
+          WHERE class=0 AND name IN (N'FMSC_QuickRegistrationScope',N'FMSC_DisposableFixture');
+          '@
+            $types=Query $db $sql
+            Write-Host "SCHEMA $schema BEFORE: $((@($types.Tables[0].Rows | ForEach-Object { $_['name'].ToString()+':'+$_['BaseType'].ToString() })) -join ', ')"
+            $fix=@'
+          DECLARE @scope uniqueidentifier=NEWID();
+          IF EXISTS(SELECT 1 FROM sys.extended_properties WHERE class=0 AND name=N'FMSC_QuickRegistrationScope')
+              EXEC sys.sp_updateextendedproperty @name=N'FMSC_QuickRegistrationScope',@value=@scope;
+          ELSE
+              EXEC sys.sp_addextendedproperty @name=N'FMSC_QuickRegistrationScope',@value=@scope;
+          SELECT name,CONVERT(nvarchar(30),SQL_VARIANT_PROPERTY(value,'BaseType')) AS BaseType,
+                 CASE WHEN TRY_CONVERT(uniqueidentifier,value) IS NULL THEN 0 ELSE 1 END AS ValidGuid
+          FROM sys.extended_properties
+          WHERE class=0 AND name=N'FMSC_QuickRegistrationScope';
+          '@
+            $after=Query $db $fix
+            Write-Host "SCHEMA $schema AFTER: $((@($after.Tables[0].Rows | ForEach-Object { $_['name'].ToString()+':'+$_['BaseType'].ToString()+';guid='+$_['ValidGuid'].ToString() })) -join ', ')"
+            if ($schema -eq 7) {
+              $path=Join-Path $env:GITHUB_WORKSPACE 'fmsc-source/Core/DatabaseCompatibility.cs'
+              $code=Get-Content -LiteralPath $path -Raw
+              $m=[regex]::Match($code,'(?s)using var command = new SqlCommand\("""\s*(.*?)\s*""", connection\)')
+              if (-not $m.Success) { throw 'Could not extract compatibility SQL' }
+              $json=Get-Content -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'fmsc-source/Core/DatabaseCompatibilityRequirements.json') -Raw
+              $check=Query $db $m.Groups[1].Value $json
+              Write-Host "SCHEMA 7 COMPATIBILITY ERRORS: $($check.Tables[0].Rows[0][0])"
+              if ($check.Tables.Count -gt 1) {
+                foreach ($row in $check.Tables[1].Rows) { Write-Host ("  REQUIREMENT: "+$row[0].ToString()) }
+              }
+            }
+          } finally {
+            try { [void](Query master "ALTER DATABASE [$db] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; EXEC sys.sp_detach_db @dbname=N'$db';") }
+            finally { [System.Data.SqlClient.SqlConnection]::ClearAllPools() }
+          }
