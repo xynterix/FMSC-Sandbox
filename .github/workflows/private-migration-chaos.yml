@@ -1,0 +1,78 @@
+name: '02 - Private Historical Migration Chaos (No Release)'
+
+on:
+  push:
+    branches: ['test/private-migration-chaos-20261107']
+    paths:
+      - 'Tests/RunHistoricalMigrationChaos.ps1'
+      - '.github/workflows/private-migration-chaos.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fmsc-private-migration-chaos
+  cancel-in-progress: false
+
+jobs:
+  resolve-source:
+    runs-on: ubuntu-24.04
+    outputs:
+      source_sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - id: source
+        name: Resolve immutable current public Source main SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' https://api.github.com/repos/farhan2166-creator/FMSC-Source/branches/main | jq -r '.commit.sha')"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Testing Source $sha against disposable schema-3 copies." >> "$GITHUB_STEP_SUMMARY"
+
+  historical-migration-chaos:
+    needs: resolve-source
+    runs-on: windows-2022
+    timeout-minutes: 50
+    env:
+      FMSC_DISPOSABLE_INSTALL: approved-synthetic-only
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+    steps:
+      - name: Checkout private chaos harness (no credentials retained)
+        uses: actions/checkout@v7
+        with:
+          path: sandbox-harness
+          persist-credentials: false
+      - name: Checkout exact frozen synthetic fixtures with Git LFS
+        uses: actions/checkout@v7
+        with:
+          repository: farhan2166-creator/FMSC-Sandbox
+          ref: 5a8c5130c9d7b76552bb73a753cd44c4d192d2d0
+          path: fmsc-sandbox
+          lfs: true
+          persist-credentials: false
+      - name: Checkout exact Source main revision, without publishing token
+        uses: actions/checkout@v7
+        with:
+          repository: farhan2166-creator/FMSC-Source
+          ref: ${{ needs.resolve-source.outputs.source_sha }}
+          path: fmsc-source
+          persist-credentials: false
+      - name: Break SQL migrations on disposable historical fixture and prove recovery
+        shell: pwsh
+        timeout-minutes: 42
+        run: |
+          & ./sandbox-harness/Tests/RunHistoricalMigrationChaos.ps1 -SourceRoot (Join-Path $env:GITHUB_WORKSPACE 'fmsc-source') -FixtureRoot (Join-Path $env:GITHUB_WORKSPACE 'fmsc-sandbox')
+      - name: Refuse an out-of-date chaos verdict if Source main moved
+        shell: pwsh
+        env:
+          EXPECTED_SOURCE_SHA: ${{ needs.resolve-source.outputs.source_sha }}
+        run: |
+          $head=(Invoke-RestMethod 'https://api.github.com/repos/farhan2166-creator/FMSC-Source/branches/main').commit.sha
+          if ($head -cne $env:EXPECTED_SOURCE_SHA) {
+            throw 'Source main changed during chaos: run again against the new SHA.'
+          }
+          "Source main unchanged: $head" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+
+# Fault injection is runner-local. No status attestation or release publishing.
