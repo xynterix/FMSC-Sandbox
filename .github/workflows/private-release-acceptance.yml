@@ -1,0 +1,172 @@
+name: 00 - Private MDF-LDF Release Acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: 'Exact 40-character public FMSC-Source commit SHA to test'
+        required: true
+        type: string
+  # Automatically proof-test this workflow on edits; push tests PR #118 head
+  # while the change remains draft. Only exact Source/main may be attested.
+  push:
+    paths:
+      - '.github/workflows/private-release-acceptance.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fmsc-private-sql-acceptance
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      source_sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - id: source
+        name: Resolve exact public Source commit without credentials
+        shell: bash
+        env:
+          INPUT_SHA: ${{ inputs.source_sha }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            sha="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
+              'https://api.github.com/repos/farhan2166-creator/FMSC-Source/pulls/118' | jq -r '.head.sha')"
+          else
+            sha="$INPUT_SHA"
+          fi
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid exact Source SHA'; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Testing Source SHA: $sha" >> "$GITHUB_STEP_SUMMARY"
+
+  sql-contract:
+    needs: resolve
+    runs-on: windows-2022
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        schema: [3, 7]
+    steps:
+      - name: Checkout private fixture harness (no saved credential)
+        uses: actions/checkout@v7
+        with:
+          lfs: true
+          persist-credentials: false
+      - name: Checkout exact public Source SHA
+        uses: actions/checkout@v7
+        with:
+          repository: farhan2166-creator/FMSC-Source
+          ref: ${{ needs.resolve.outputs.source_sha }}
+          path: fmsc-source
+          persist-credentials: false
+      - name: Validate immutable MDF-LDF copies and complete production SQL contracts
+        shell: pwsh
+        run: |
+          ./Tests/RunSandboxSqlContract.ps1 -Schema ${{ matrix.schema }} `
+            -SourceRoot (Join-Path $env:GITHUB_WORKSPACE 'fmsc-source') `
+            -FixtureRoot $env:GITHUB_WORKSPACE
+
+  real-installer:
+    needs: [resolve, sql-contract]
+    runs-on: windows-2022
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        schema: [3, 7]
+    env:
+      FMSC_DISPOSABLE_INSTALL: approved-synthetic-only
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+    steps:
+      - name: Checkout exact public Source SHA
+        uses: actions/checkout@v7
+        with:
+          repository: farhan2166-creator/FMSC-Source
+          ref: ${{ needs.resolve.outputs.source_sha }}
+          persist-credentials: false
+      - name: Checkout frozen private fixtures with Git LFS
+        uses: actions/checkout@v7
+        with:
+          repository: farhan2166-creator/FMSC-Sandbox
+          ref: 5a8c5130c9d7b76552bb73a753cd44c4d192d2d0
+          path: fmsc-sandbox
+          lfs: true
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Real Windows installer against isolated historical/current database copy
+        shell: pwsh
+        timeout-minutes: 45
+        run: |
+          ./Tools/RunDisposableWindowsInstall.ps1 -ProjectDirectory . -Level3 `
+            -FixtureRoot (Join-Path $env:GITHUB_WORKSPACE 'fmsc-sandbox') `
+            -FixtureSchema ${{ matrix.schema }}
+      - name: SQL billing and update-recovery regressions
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          ./Tools/TestAutomaticBilling.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Billing regression failed.' }
+          ./Tools/TestUpdateRecoverySql.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'SQL recovery regression failed.' }
+      - name: Upload sanitized evidence only
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fmsc-private-acceptance-${{ github.run_id }}-v${{ matrix.schema }}
+          path: |
+            ${{ runner.temp }}/fmsc-install-evidence/report.json
+            ${{ runner.temp }}/fmsc-install-evidence/summary.md
+          if-no-files-found: warn
+          retention-days: 7
+
+  # NO Source checkout or arbitrary Source scripts in this token-bearing job.
+  # A run on an unmerged PR commit can test but cannot issue publication approval.
+  attest:
+    needs: [resolve, sql-contract, real-installer]
+    if: ${{ always() && needs.resolve.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+      SQL_RESULT: ${{ needs.sql-contract.result }}
+      INSTALL_RESULT: ${{ needs.real-installer.result }}
+      ATTEST_TOKEN: ${{ secrets.FMSC_SOURCE_ATTEST_TOKEN }}
+      RUN_URL: https://github.com/farhan2166-creator/FMSC-Sandbox/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Attest only exact current Source main SHA, fail closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.github.com/repos/farhan2166-creator/FMSC-Source'
+          main="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' "$api/branches/main" | jq -r '.commit.sha')"
+          if [[ "$SOURCE_SHA" != "$main" ]]; then
+            echo 'No release attestation: tested Source commit is not the current main SHA.'
+            exit 0
+          fi
+          [[ -n "$ATTEST_TOKEN" ]] || { echo 'FMSC_SOURCE_ATTEST_TOKEN not configured; approval withheld.'; exit 1; }
+          state='failure'
+          description='MDF/LDF v3+v7 real acceptance FAILED or incomplete'
+          if [[ "$SQL_RESULT" == 'success' && "$INSTALL_RESULT" == 'success' ]]; then
+            state='success'
+            description='MDF/LDF v3+v7 SQL+installer PASS (fixture 5a8c5130)'
+          fi
+          payload="$(jq -n --arg state "$state" --arg context 'fmsc/sandbox-mdf-ldf/v1' \
+            --arg description "$description" --arg target_url "$RUN_URL" \
+            '{state:$state,context:$context,description:$description,target_url:$target_url}')"
+          curl --fail-with-body --silent --show-error --retry 3 -X POST \
+            -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json' \
+            -H "Authorization: Bearer $ATTEST_TOKEN" \
+            --data "$payload" "$api/statuses/$SOURCE_SHA" > /dev/null
+          echo "Private acceptance status: $state for $SOURCE_SHA"
+          [[ "$state" == 'success' ]] || exit 1
