@@ -20,8 +20,8 @@ Private, **synthetic-only**, permanent SQL Server LocalDB test fixtures for the 
 - Only genuinely synthetic data; never add real or anonymized school records, credentials, passwords, or secrets.
 - Keep masters detached/offline and immutable; never copy an attached SQL database file.
 - Git LFS stores MDF/LDF; verify LFS materialization and exact SHA-256 before attaching a disposable copy.
-- Cross-repository access must be **read only**, limited to trusted release jobs and pinned commits. Do not grant credentials to untrusted PR workflows.
+- Private Sandbox jobs check out **public Source** at a specific commit without any Sandbox-read credential. The separate attestation job alone may use `FMSC_SOURCE_ATTEST_TOKEN`, restricted to writing **commit statuses on FMSC-Source only**; it cannot write Source contents, read private updates, or publish an application. Never pass it to Source code or untrusted PR workflows.
 - Never include any MDF/LDF/BAK or school records in public workflow artifacts or in the installer/application ZIP.
 - Stop release publication if fixture validation, SQL migration, compatibility, cleanup, or the security gate fails.
 
-The source-workflow integration lives in FMSC-Source; this repository contains immutable fixtures and private one-time integration tests only.
+`00 - Private MDF-LDF Release Acceptance` is the permanent, Sandbox-owned SQL and real installer matrix. It verifies the full `Core/DatabaseCompatibilityRequirements.json` and optional Communication SQL contracts, then emits a success status for the **exact current FMSC-Source/main commit** only after both installer jobs pass. Source Workflow 04 must verify that exact status before packaging or publishing. Temporary diagnosis/one-time workflows are deleted after successful integration. See `Docs/SANDBOX_SQL_ACCEPTANCE.md` in FMSC-Source.
