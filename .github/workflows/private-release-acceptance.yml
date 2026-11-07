@@ -10,6 +10,7 @@ on:
   # Changes to this trusted workflow re-test the current public Source/main.
   # Only exact Source/main can be tested or granted release attestation.
   push:
+    branches: [main]
     paths:
       - '.github/workflows/private-release-acceptance.yml'
 
@@ -22,6 +23,7 @@ concurrency:
 
 jobs:
   resolve:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       source_sha: ${{ steps.source.outputs.sha }}
@@ -150,7 +152,7 @@ jobs:
   # Status can be issued only for the exact current Source/main commit.
   attest:
     needs: [resolve, sql-contract, real-installer]
-    if: ${{ always() && needs.resolve.result == 'success' }}
+    if: ${{ always() && github.ref == 'refs/heads/main' && needs.resolve.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
