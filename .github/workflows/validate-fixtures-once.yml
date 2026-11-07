@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: farhan2166-creator/FMSC-Source
-          ref: b6c04635a030a0449d778780c13eb1ef137c08ca
+          ref: 2627bccf59f7f60a183efaeb6a6a541d545459cc
           persist-credentials: false
 
       - name: Checkout pinned private FMSC sandbox fixtures with Git LFS
