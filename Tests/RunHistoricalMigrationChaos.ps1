@@ -94,9 +94,10 @@ function DropOwned([string]$catalog) {
 }
 function Apply([string]$scenario) {
     $ps=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    $output=@(& $ps -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $script:applier
-        -SqlInstance $script:pipe -DatabaseName $db -BackupRoot $backups
-        -SqlCmdPath $script:sqlcmd -Apply 2>&1 | ForEach-Object { [string]$_ })
+    $arguments=@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$script:applier,
+        '-SqlInstance',$script:pipe,'-DatabaseName',$db,'-BackupRoot',$backups,
+        '-SqlCmdPath',$script:sqlcmd,'-Apply')
+    $output=@(& $ps @arguments 2>&1 | ForEach-Object { [string]$_ })
     $exitCode=[int]$LASTEXITCODE
     Write-Host "CHAOS SCENARIO: $scenario / migration runner exit $exitCode"
     return [pscustomobject]@{ExitCode=$exitCode;Output=($output -join [Environment]::NewLine)}
