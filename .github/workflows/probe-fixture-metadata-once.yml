@@ -34,13 +34,19 @@ jobs:
           Add-Type -AssemblyName System.Data
           $schema=[int]'${{ matrix.schema }}'
           $db="FMSC_DIAG_$schema"
-          $root=Join-Path $env:RUNNER_TEMP "FMSC_DIAG_$schema"
+          # LocalDB starts under the runner user; keep attached copies in its local profile.
+          $root=Join-Path $env:LOCALAPPDATA "FMSC_DIAG_$schema"
           New-Item -ItemType Directory -Path $root | Out-Null
           foreach ($fn in @('FMSC_DB.mdf','FMSC_DB_log.ldf')) {
             $src=Join-Path $env:GITHUB_WORKSPACE "Database/v$schema/$fn"
             $dest=Join-Path $root $fn
             Copy-Item -LiteralPath $src -Destination $dest
-            (Get-Item -LiteralPath $dest).IsReadOnly=$false
+            $copy=Get-Item -LiteralPath $dest
+            $copy.IsReadOnly=$false
+            if ($copy.IsReadOnly) { throw "SQL copy remains read-only: $fn" }
+            $stream=[IO.File]::Open($dest,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+            $stream.Dispose()
+            Write-Host "SQL $fn copy is writable, size=$($copy.Length)"
           }
           $localdb=Get-Command SqlLocalDB.exe -ErrorAction SilentlyContinue
           if (-not $localdb) { $ldExe=Join-Path $env:ProgramFiles 'Microsoft SQL Server/160/Tools/Binn/SqlLocalDB.exe' }
