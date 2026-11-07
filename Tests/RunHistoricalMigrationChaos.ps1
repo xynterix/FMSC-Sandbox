@@ -37,8 +37,10 @@ foreach ($f in $files) {
 }
 $version=[regex]::Match((Get-Content (Join-Path $source 'DatabaseHelper.cs') -Raw),
     'RequiredDatabaseSchemaVersion\s*=\s*"([0-9]+)"')
-if (-not $version.Success -or [int]$version.Groups[1].Value -ne 7) {
-    throw 'CHAOS REFUSED: this fixed test requires Source schema 7.'
+if (-not $version.Success) { throw 'CHAOS REFUSED: application schema not declared.' }
+$targetVersion=[int]$version.Groups[1].Value
+if ($targetVersion -lt 7 -or $targetVersion -gt 9999) {
+    throw 'CHAOS REFUSED: target schema is outside the supported frozen-fixture range.'
 }
 $id=[guid]::NewGuid().ToString('N')
 $db='FMSC_Chaos_'+$id
@@ -127,7 +129,11 @@ try {
     Copy-Item (Join-Path $source 'DatabaseHelper.cs') -Destination $harness
     Copy-Item (Join-Path $source 'Installer/core.ps1') -Destination (Join-Path $harness 'Installer/core.ps1')
     Copy-Item (Join-Path $source 'Migrations/Apply-Migrations.ps1') -Destination (Join-Path $harness 'Migrations/Apply-Migrations.ps1')
-    foreach ($v in 4..7) { Copy-Item (Join-Path $source "Migrations/$v.sql") -Destination (Join-Path $harness "Migrations/$v.sql") }
+    foreach ($v in 4..$targetVersion) {
+        $originalMigration=Join-Path $source "Migrations/$v.sql"
+        Need (Test-Path -LiteralPath $originalMigration -PathType Leaf) "Required migration $v.sql is missing."
+        Copy-Item -LiteralPath $originalMigration -Destination (Join-Path $harness "Migrations/$v.sql")
+    }
     $script:applier=Join-Path $harness 'Migrations/Apply-Migrations.ps1'
     $script:sqlcmd=Join-Path $harness 'sqlcmd.exe'
     & (Join-Path $source 'Tools/PrepareBundledSqlCmd.ps1') -DestinationFile $script:sqlcmd
@@ -199,8 +205,22 @@ END;
     VerifyBackup $first[0].FullName
     Need ((Get-FileHash $first[0].FullName -Algorithm SHA256).Hash -eq $backupHash) 'Original backup changed.'
     Copy-Item (Join-Path $source 'Migrations/5.sql') -Destination $five -Force
-    $resume=Apply 'resume official migrations 5 through 7'
-    Need ($resume.ExitCode -eq 0 -and (DbVersion $db) -eq 7) 'Original migrations did not recover to schema 7.'
+    # A newly added target migration is also fault-injected. Real intermediate
+    # Source migrations must commit first, then a deliberately failing newest
+    # migration must roll back without changing its schema marker.
+    if ($targetVersion -gt 7) {
+        $latestPath=Join-Path $harness "Migrations/$targetVersion.sql"
+        [IO.File]::WriteAllText($latestPath,("CREATE TABLE dbo.FMSC_ChaosTransient(Id int NOT NULL);"+[Environment]::NewLine+
+            "THROW 51000,'Deliberate latest schema migration failure',1;"),[Text.UTF8Encoding]::new($false))
+        $badLatest=Apply "transactional SQL failure at migration $targetVersion"
+        Need ($badLatest.ExitCode -ne 0 -and $badLatest.Output.Contains("Migration $targetVersion failed")) "Injected migration $targetVersion SQL failure was not reached."
+        Need ((DbVersion $db) -eq ($targetVersion-1) -and (ProbeExists) -eq 0) "Migration $targetVersion left partial DDL or modified the schema marker."
+        VerifyBackup $first[0].FullName
+        Need ((Get-FileHash $first[0].FullName -Algorithm SHA256).Hash -eq $backupHash) 'Latest migration fault modified original recovery backup.'
+        Copy-Item (Join-Path $source "Migrations/$targetVersion.sql") -Destination $latestPath -Force
+    }
+    $resume=Apply "resume genuine Source migrations through schema $targetVersion"
+    Need ($resume.ExitCode -eq 0 -and (DbVersion $db) -eq $targetVersion) "Original migrations did not recover to schema $targetVersion."
     $raw=Get-Content (Join-Path $source 'Core/DatabaseCompatibility.cs') -Raw
     $sqlContract=[regex]::Match($raw,'(?s)using var command = new SqlCommand\("""\s*(.*?)\s*""", connection\)')
     Need $sqlContract.Success 'Production SQL contract not found.'
@@ -221,15 +241,16 @@ END;
     DoSql master $sqlRestore
     $restored=$true
     AssertOwned $restore
-    Need ((DbVersion $restore) -eq 3 -and (DbVersion $db) -eq 7) 'Backup restore did not reproduce schema 3 independently.'
+    Need ((DbVersion $restore) -eq 3 -and (DbVersion $db) -eq $targetVersion) 'Backup restore did not reproduce schema 3 independently.'
     DoSql $restore 'DBCC CHECKDB WITH NO_INFOMSGS;'
-    Write-Host 'PASS: missing file refused, migration 4 and 5 faults rolled back, original scripts resumed, production contract passed, original backup restored at schema 3.'
+    Write-Host "PASS: missing file refused, migration 4/5 and newest schema $targetVersion faults rolled back, original scripts resumed, production contract passed, original backup restored at schema 3."
     if ($env:GITHUB_STEP_SUMMARY) {
         @('# Historical private migration chaos: PASS','',
           '- Missing intermediate migration rejected before backup/mutation',
           '- Injected schema-4 DDL fault rolled back; schema marker remained 3',
           '- Genuine schema 4 committed; injected schema-5 fault rolled back',
-          '- Original scripts resumed through schema 7; full compatibility/DBCC passed',
+          "- Source migrations resumed through schema $targetVersion; full compatibility/DBCC passed",
+          "- Latest schema $targetVersion fault injected when newer than frozen v7 baseline",
           '- Original SHA-256-verified backup restored to distinct schema-3 catalog',
           '- No attestation, release publication or permanent fixture mutation') |
             Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY

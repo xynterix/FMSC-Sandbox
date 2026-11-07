@@ -27,6 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       source_sha: ${{ steps.source.outputs.sha }}
+      target_schema: ${{ steps.source.outputs.target_schema }}
     steps:
       - id: source
         name: Resolve exact public Source commit without credentials
@@ -48,6 +49,18 @@ jobs:
             echo 'Refusing anything other than exact current Source/main SHA for private fixture execution.'
             exit 1
           fi
+          # Resolve target from the pinned public Source SHA, not user input.
+          # Both independently packaged installer versions must agree.
+          raw="https://raw.githubusercontent.com/farhan2166-creator/FMSC-Source/$sha"
+          target="$(curl -fsSL --retry 3 "$raw/DatabaseHelper.cs" |
+            sed -nE 's/.*RequiredDatabaseSchemaVersion[[:space:]]*=[[:space:]]*"([0-9]+)".*/\1/p')"
+          installer="$(curl -fsSL --retry 3 "$raw/Installer/core.ps1" |
+            grep -E '^\$DatabaseVersion[[:space:]]*=' | grep -Eo '[0-9]+' | head -1)"
+          [[ "$target" =~ ^[1-9][0-9]*$ && "$target" == "$installer" ]] &&
+            (( target >= 7 && target <= 9999 )) || {
+              echo 'Refusing invalid or inconsistent Source migration target.'; exit 1;
+            }
+          echo "target_schema=$target" >> "$GITHUB_OUTPUT"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "Testing Source SHA: $sha" >> "$GITHUB_STEP_SUMMARY"
 
@@ -150,7 +163,8 @@ jobs:
 
   # Negative testing uses a different disposable copy of the same frozen
   # schema-3 fixture. Missing migrations and deliberately failing DDL must
-  # preserve version/backup before real Source migrations can resume.
+  # preserve version/backup before real Source migrations can resume through
+  # the version currently declared by the exact Source commit.
   # No attestation token or publishing token is available to this job.
   migration-chaos:
     needs: [resolve, sql-contract]
@@ -181,7 +195,7 @@ jobs:
           ref: ${{ needs.resolve.outputs.source_sha }}
           path: fmsc-source
           persist-credentials: false
-      - name: Prove rollback, backup restore and genuine schema-7 resumption
+      - name: Prove rollback, backup restore and genuine target-schema resumption
         shell: pwsh
         timeout-minutes: 40
         run: |
@@ -196,6 +210,7 @@ jobs:
     timeout-minutes: 5
     env:
       SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+      TARGET_SCHEMA: ${{ needs.resolve.outputs.target_schema }}
       SQL_RESULT: ${{ needs.sql-contract.result }}
       INSTALL_RESULT: ${{ needs.real-installer.result }}
       CHAOS_RESULT: ${{ needs.migration-chaos.result }}
@@ -214,12 +229,12 @@ jobs:
           fi
           [[ -n "$ATTEST_TOKEN" ]] || { echo 'FMSC_SOURCE_ATTEST_TOKEN not configured; approval withheld.'; exit 1; }
           state='failure'
-          description='MDF/LDF v3+v7 real acceptance FAILED or incomplete'
+          description="MDF/LDF v3+v7 -> v$TARGET_SCHEMA acceptance FAILED"
           if [[ "$SQL_RESULT" == 'success' && "$INSTALL_RESULT" == 'success' && "$CHAOS_RESULT" == 'success' ]]; then
             state='success'
-            description='MDF/LDF v3+v7 SQL+installer PASS (fixture 5a8c5130)'
+            description="MDF/LDF v3+v7 -> v$TARGET_SCHEMA SQL+installer PASS (fixture 5a8c5130)"
           fi
-          payload="$(jq -n --arg state "$state" --arg context 'fmsc/sandbox-mdf-ldf/v1' \
+          payload="$(jq -n --arg state "$state" --arg context 'fmsc/sandbox-mdf-ldf/v2' \
             --arg description "$description" --arg target_url "$RUN_URL" \
             '{state:$state,context:$context,description:$description,target_url:$target_url}')"
           curl --fail-with-body --silent --show-error --retry 3 -X POST \
