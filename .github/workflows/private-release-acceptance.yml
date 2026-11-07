@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       source_sha:
-        description: 'Exact Source/main SHA (or owner-controlled PR118 head during review)'
+        description: 'Exact current FMSC-Source/main commit SHA'
         required: true
         type: string
-  # Automatically proof-test this workflow on edits; push tests latest PR #118 head
-  # while the change remains draft. Only exact Source/main may be attested.
+  # Changes to this trusted workflow re-test the current public Source/main.
+  # Only exact Source/main can be tested or granted release attestation.
   push:
     paths:
       - '.github/workflows/private-release-acceptance.yml'
@@ -34,33 +34,17 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
+          main_sha="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/farhan2166-creator/FMSC-Source/branches/main' | jq -r '.commit.sha')"
           if [[ "$EVENT_NAME" == "push" ]]; then
-            pr="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
-              'https://api.github.com/repos/farhan2166-creator/FMSC-Source/pulls/118')"
-            if [[ "$(jq -r '.merged' <<< "$pr")" == 'true' ]]; then
-              sha="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
-                'https://api.github.com/repos/farhan2166-creator/FMSC-Source/branches/main' | jq -r '.commit.sha')"
-            else
-              sha="$(jq -r '.head.sha' <<< "$pr")"
-            fi
+            sha="$main_sha"
           else
             sha="$INPUT_SHA"
           fi
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid exact Source SHA'; exit 1; }
-          main_sha="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
-            'https://api.github.com/repos/farhan2166-creator/FMSC-Source/branches/main' | jq -r '.commit.sha')"
           if [[ "$sha" != "$main_sha" ]]; then
-            # Only the original same-repository owner PR head was eligible
-            # for premerge testing. Never run arbitrary public/fork code with
-            # access to private fixture binaries, even without a secret.
-            pr="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
-              'https://api.github.com/repos/farhan2166-creator/FMSC-Source/pulls/118')"
-            if [[ "$(jq -r '.merged' <<< "$pr")" != 'false' ||
-                  "$(jq -r '.head.repo.full_name' <<< "$pr")" != 'farhan2166-creator/FMSC-Source' ||
-                  "$(jq -r '.head.sha' <<< "$pr")" != "$sha" ]]; then
-              echo 'Refusing unreviewed public Source SHA for private fixture execution.'
-              exit 1
-            fi
+            echo 'Refusing anything other than exact current Source/main SHA for private fixture execution.'
+            exit 1
           fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "Testing Source SHA: $sha" >> "$GITHUB_STEP_SUMMARY"
@@ -163,7 +147,7 @@ jobs:
           retention-days: 7
 
   # No Source checkout or arbitrary Source scripts in this token-bearing job.
-  # A run on an unmerged PR commit can test but cannot issue publication approval.
+  # Status can be issued only for the exact current Source/main commit.
   attest:
     needs: [resolve, sql-contract, real-installer]
     if: ${{ always() && needs.resolve.result == 'success' }}
