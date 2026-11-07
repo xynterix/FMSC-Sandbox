@@ -1,0 +1,7 @@
+# Disposable SQL outputs must not be committed here
+*.bak
+*.trn
+*.log
+*.tmp
+*.mdmp
+*.dmp
