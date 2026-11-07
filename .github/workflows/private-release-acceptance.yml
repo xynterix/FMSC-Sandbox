@@ -7,7 +7,7 @@ on:
         description: 'Exact 40-character public FMSC-Source commit SHA to test'
         required: true
         type: string
-  # Automatically proof-test this workflow on edits; push tests PR #118 head
+  # Automatically proof-test this workflow on edits; push tests latest PR #118 head
   # while the change remains draft. Only exact Source/main may be attested.
   push:
     paths:
