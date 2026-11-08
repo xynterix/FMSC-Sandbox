@@ -162,18 +162,49 @@ END;
   if ($result.Tables.Count -lt 2 -or [int]$result.Tables[0].Rows[0][0] -ne 0) {
     throw "Complete base schema contract failed for schema-$Schema copy."
   }
-  $module=Get-Content -LiteralPath (Join-Path $source 'Services/Communication/CommunicationSchemaContract.cs') -Raw
-  $m=[regex]::Match($module,'(?s)await using var structure=new SqlCommand\("""\s*(.*?)\s*""",connection\)')
-  if (-not $m.Success) { throw 'Production communication structure SQL missing.' }
-  $comm=Query $db $m.Groups[1].Value
-  if ([int]$comm.Tables[0].Rows[0][0] -ne 1) { throw 'Communication module structural contract failed.' }
-  $commSchema=Get-Content -LiteralPath (Join-Path $source 'Services/Communication/Schema.sql') -Raw
-  $expected=@([regex]::Matches($commSchema,'(?im)^\s*CREATE (PROCEDURE|FUNCTION) comm\.\[?(\w+)\]?') |
-    ForEach-Object { $_.Groups[2].Value } | Sort-Object -Unique)
-  $available=Query $db "SELECT name FROM sys.objects WHERE schema_id=SCHEMA_ID(N'comm') AND type IN(N'P',N'FN',N'IF',N'TF');"
-  $names=@($available.Tables[0].Rows | ForEach-Object { $_[0].ToString() })
-  if (@($expected | Where-Object { $_ -notin $names }).Count -ne 0) {
-    throw 'Communication contract is missing required runtime procedures/functions.'
+  # Validate durable messaging safety contracts against the upgraded disposable
+  # database. Do not require a historical C# class/file or parse its SQL text:
+  # implementation files and UI layouts are not database acceptance contracts.
+  if ($target -ge 9) {
+    $structure=Query $db @'
+SET NOCOUNT ON;
+SELECT CASE WHEN
+  SCHEMA_ID(N'msg') IS NOT NULL
+  AND SCHEMA_ID(N'comm') IS NULL
+  AND OBJECT_ID(N'dbo.StudentGuardianCommunication',N'U') IS NULL
+  AND COL_LENGTH(N'dbo.Students',N'SchoolMessageConsent') IS NOT NULL
+  AND OBJECT_ID(N'msg.ChannelSettings',N'U') IS NOT NULL
+  AND OBJECT_ID(N'msg.Batch',N'U') IS NOT NULL
+  AND OBJECT_ID(N'msg.Recipient',N'U') IS NOT NULL
+  AND OBJECT_ID(N'msg.Attempt',N'U') IS NOT NULL
+  AND OBJECT_ID(N'msg.Receipt',N'U') IS NOT NULL
+  AND OBJECT_ID(N'msg.RecordAdmissionConsent',N'P') IS NOT NULL
+  AND OBJECT_ID(N'msg.ConfirmBatch',N'P') IS NOT NULL
+  AND OBJECT_ID(N'msg.ClaimRecipient',N'P') IS NOT NULL
+THEN 1 ELSE 0 END;
+'@
+    if ([int]$structure.Tables[0].Rows[0][0] -ne 1) {
+      throw 'Required schema-9 messaging/consent contracts are missing or legacy communication survived.'
+    }
+    $defaults=Query $db @'
+SET NOCOUNT ON;
+SELECT
+  (SELECT COUNT(*) FROM msg.ChannelSettings WHERE Channel IN ('Sms','WhatsApp') AND Enabled=0) AS DisabledChannels,
+  (SELECT COUNT(*) FROM msg.ChannelSettings WHERE Enabled<>0) AS ActiveChannels,
+  (SELECT COUNT(*) FROM msg.Batch) AS Batches,
+  (SELECT COUNT(*) FROM msg.Recipient) AS Recipients,
+  (SELECT COUNT(*) FROM msg.Attempt) AS Attempts,
+  (SELECT COUNT(*) FROM msg.Receipt) AS Receipts,
+  (SELECT COUNT(*) FROM dbo.Students WHERE SchoolMessageConsent=1) AS ImpliedConsents;
+'@
+    $row=$defaults.Tables[0].Rows[0]
+    if ([int]$row['DisabledChannels'] -ne 2 -or [int]$row['ActiveChannels'] -ne 0 -or
+        [int]$row['Batches'] -ne 0 -or [int]$row['Recipients'] -ne 0 -or
+        [int]$row['Attempts'] -ne 0 -or [int]$row['Receipts'] -ne 0 -or
+        [int]$row['ImpliedConsents'] -ne 0) {
+      throw 'Migration must not enable sending, create outbound work, or imply Admission consent.'
+    }
+    Write-Host "Schema $Schema -> $target messaging safety contracts PASS"
   }
   Run $db 'DBCC CHECKDB WITH NO_INFOMSGS;'
   Write-Host "PASS: immutable schema $Schema -> production schema $target; complete base and communication contracts"
