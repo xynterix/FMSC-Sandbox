@@ -4,7 +4,8 @@ $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 if ($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_OS -cne 'Windows' -or
     $env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or
-    $env:GITHUB_REPOSITORY -cne 'farhan2166-creator/FMSC-Sandbox' -or
+    $env:GITHUB_REPOSITORY_ID -cne '1449162585' -or
+    $env:GITHUB_REPOSITORY_OWNER_ID -cne '316891609' -or
     $env:FMSC_DISPOSABLE_INSTALL -cne 'approved-synthetic-only') {
     throw 'CHAOS REFUSED: private synthetic GitHub-hosted Windows runner required.'
 }
