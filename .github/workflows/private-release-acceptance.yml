@@ -23,11 +23,12 @@ concurrency:
 
 jobs:
   resolve:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && github.repository_id == '1449162585' && github.repository_owner_id == '316891609'
     runs-on: ubuntu-latest
     outputs:
       source_sha: ${{ steps.source.outputs.sha }}
       target_schema: ${{ steps.source.outputs.target_schema }}
+      source_repo: ${{ steps.source.outputs.source_repo }}
     steps:
       - id: source
         name: Resolve exact public Source commit without credentials
@@ -37,8 +38,19 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
+          owner="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/user/316891609')"
+          login="$(jq -r 'select(.id == 316891609 and .type == "User") | .login' <<<"$owner")"
+          [[ "$login" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$ ]] || exit 1
+          source_repo="$login/FMSC-Source"
+          source="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$source_repo")"
+          jq -e --arg repo "$source_repo" '
+            .id == 1412760928 and .owner.id == 316891609 and
+            .full_name == $repo and .name == "FMSC-Source" and .private == false
+          ' <<<"$source" >/dev/null || exit 1
           main_sha="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
-            'https://api.github.com/repos/farhan2166-creator/FMSC-Source/branches/main' | jq -r '.commit.sha')"
+            "https://api.github.com/repos/$source_repo/branches/main" | jq -r '.commit.sha')"
           if [[ "$EVENT_NAME" == "push" ]]; then
             sha="$main_sha"
           else
@@ -51,7 +63,7 @@ jobs:
           fi
           # Resolve the only authoritative schema from core.ps1 in the
           # exact pinned public Source SHA, never an operator input.
-          raw="https://raw.githubusercontent.com/farhan2166-creator/FMSC-Source/$sha"
+          raw="https://raw.githubusercontent.com/$source_repo/$sha"
           target="$(curl -fsSL --retry 3 "$raw/Installer/core.ps1" |
             grep -E '^\$DatabaseVersion[[:space:]]*=' | grep -Eo '[0-9]+' | head -1)"
           [[ "$target" =~ ^[1-9][0-9]*$ ]] &&
@@ -60,6 +72,7 @@ jobs:
             }
           echo "target_schema=$target" >> "$GITHUB_OUTPUT"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "source_repo=$source_repo" >> "$GITHUB_OUTPUT"
           echo "Testing Source SHA: $sha" >> "$GITHUB_STEP_SUMMARY"
 
   sql-contract:
@@ -78,7 +91,7 @@ jobs:
       - name: Checkout exact immutable fixture commit with Git LFS
         uses: actions/checkout@v7
         with:
-          repository: farhan2166-creator/FMSC-Sandbox
+          repository: ${{ github.repository }}
           ref: 5a8c5130c9d7b76552bb73a753cd44c4d192d2d0
           path: fmsc-sandbox
           lfs: true
@@ -86,7 +99,7 @@ jobs:
       - name: Checkout exact public Source SHA
         uses: actions/checkout@v7
         with:
-          repository: farhan2166-creator/FMSC-Source
+          repository: ${{ needs.resolve.outputs.source_repo }}
           ref: ${{ needs.resolve.outputs.source_sha }}
           path: fmsc-source
           persist-credentials: false
@@ -113,13 +126,13 @@ jobs:
       - name: Checkout exact public Source SHA
         uses: actions/checkout@v7
         with:
-          repository: farhan2166-creator/FMSC-Source
+          repository: ${{ needs.resolve.outputs.source_repo }}
           ref: ${{ needs.resolve.outputs.source_sha }}
           persist-credentials: false
       - name: Checkout frozen private fixtures with Git LFS
         uses: actions/checkout@v7
         with:
-          repository: farhan2166-creator/FMSC-Sandbox
+          repository: ${{ github.repository }}
           ref: 5a8c5130c9d7b76552bb73a753cd44c4d192d2d0
           path: fmsc-sandbox
           lfs: true
@@ -181,7 +194,7 @@ jobs:
       - name: Checkout immutable schema-3 fixture with Git LFS
         uses: actions/checkout@v7
         with:
-          repository: farhan2166-creator/FMSC-Sandbox
+          repository: ${{ github.repository }}
           ref: 5a8c5130c9d7b76552bb73a753cd44c4d192d2d0
           path: fmsc-sandbox
           lfs: true
@@ -189,7 +202,7 @@ jobs:
       - name: Checkout exact tested Source SHA
         uses: actions/checkout@v7
         with:
-          repository: farhan2166-creator/FMSC-Source
+          repository: ${{ needs.resolve.outputs.source_repo }}
           ref: ${{ needs.resolve.outputs.source_sha }}
           path: fmsc-source
           persist-credentials: false
@@ -203,7 +216,7 @@ jobs:
   # Status can be issued only for the exact current Source/main commit.
   attest:
     needs: [resolve, sql-contract, real-installer, migration-chaos]
-    if: ${{ always() && github.ref == 'refs/heads/main' && needs.resolve.result == 'success' }}
+    if: ${{ always() && github.ref == 'refs/heads/main' && github.repository_id == '1449162585' && github.repository_owner_id == '316891609' && needs.resolve.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -213,13 +226,21 @@ jobs:
       INSTALL_RESULT: ${{ needs.real-installer.result }}
       CHAOS_RESULT: ${{ needs.migration-chaos.result }}
       ATTEST_TOKEN: ${{ secrets.FMSC_SOURCE_ATTEST_TOKEN }}
-      RUN_URL: https://github.com/farhan2166-creator/FMSC-Sandbox/actions/runs/${{ github.run_id }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      SOURCE_REPO: ${{ needs.resolve.outputs.source_repo }}
     steps:
       - name: Attest only exact current Source main SHA, fail closed
         shell: bash
         run: |
           set -euo pipefail
-          api='https://api.github.com/repos/farhan2166-creator/FMSC-Source'
+          [[ "$GITHUB_REPOSITORY_ID" == '1449162585' && "$GITHUB_REPOSITORY_OWNER_ID" == '316891609' ]] || exit 1
+          owner="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' 'https://api.github.com/user/316891609')"
+          login="$(jq -r 'select(.id == 316891609 and .type == "User") | .login' <<<"$owner")"
+          [[ "$login" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$ ]] || exit 1
+          [[ "$SOURCE_REPO" == "$login/FMSC-Source" ]] || exit 1
+          api="https://api.github.com/repos/$SOURCE_REPO"
+          source="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' "$api")"
+          jq -e --arg repo "$SOURCE_REPO" '.id == 1412760928 and .owner.id == 316891609 and .full_name == $repo' <<<"$source" >/dev/null || exit 1
           main="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' "$api/branches/main" | jq -r '.commit.sha')"
           if [[ "$SOURCE_SHA" != "$main" ]]; then
             echo 'Acceptance INVALIDATED: Source/main changed during testing; no attestation granted.'

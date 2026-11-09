@@ -1,0 +1,25 @@
+name: '04 - CI - Stable GitHub Identity Contracts'
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - 'Tests/test_identity_contract.py'
+      - 'Tests/RunHistoricalMigrationChaos.ps1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  identity-contract:
+    if: github.repository_id == '1449162585' && github.repository_owner_id == '316891609'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Verify immutable repository identities and exact-commit fixture guard
+        shell: bash
+        run: python3 Tests/test_identity_contract.py
