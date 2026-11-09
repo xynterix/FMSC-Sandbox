@@ -1,4 +1,4 @@
-name: '02 - Private Historical Migration Chaos (No Release)'
+name: '01 - Private Historical Migration Chaos (No Release)'
 
 on:
   push:
