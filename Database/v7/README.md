@@ -1,8 +1,9 @@
-# Permanent schema-7 fixture
+# Permanent synthetic schema-7 SQL fixture
 
-Place **only fictional and cleanly detached** files here:
+The detached `FMSC_DB.mdf` and `FMSC_DB_log.ldf` are **synthetic and data-free**, not a school production backup. Schema version remains **7**.
 
-- FMSC_DB.mdf
-- FMSC_DB_log.ldf
+On 2026-11-10 a one-time Windows SQL repair was validated against copies, then uploaded with Git LFS after an independent reattach/DBCC check, complete migration SQL contract and real Windows installer/update/rollback acceptance. The repair preserved the existing `FMSC_QuickRegistrationScope` GUID while changing its native SQL-variant base type from `varchar` to `uniqueidentifier`.
 
-Populate with comprehensive fictional school records **before the initial upload**. It must report dbo.DatabaseVersion = 7. CI must clone it and apply later migrations to the clone, never update these master files.
+**Do not seed Administrator, Accountant, permissions, admission counters or billing settings in this historical file.** Production migrations 15 and 16 initialize first-run reference data when the empty schema-7 fixture is upgraded. The permanent fixture must stay empty of real users, students, credentials and operational school records.
+
+The original historical source archive (`FMSC-schema-v7.zip`) and earlier Git history remain available unchanged. The approved repaired binary hashes are recorded in `Tests/manifest.json`. Treat this pair as frozen after acceptance: future migrations and synthetic records belong on **disposable copies**, never in the permanent files.
