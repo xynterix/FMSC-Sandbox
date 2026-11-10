@@ -1,5 +1,5 @@
 name: 99 - One-time Repair Synthetic Schema-7 SQL Fixture
-# Re-run after read-only fixture diagnostic hardening.
+# Use per-user SQL working directory to avoid runner-temp file ACL restrictions.
 
 on:
   push:
