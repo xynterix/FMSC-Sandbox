@@ -1,4 +1,5 @@
 name: 99 - One-time Repair Synthetic Schema-7 SQL Fixture
+# Re-run after read-only fixture diagnostic hardening.
 
 on:
   push:
