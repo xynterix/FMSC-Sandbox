@@ -23,6 +23,13 @@ jobs:
       FMSC_DISPOSABLE_INSTALL: approved-synthetic-only
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
     steps:
+      - name: Checkout current public FMSC Source at workspace root for real installer checks
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository_owner }}/FMSC-Source
+          ref: main
+          persist-credentials: false
+
       - name: Checkout owner-approved repair branch with actual Git LFS files
         uses: actions/checkout@v7
         with:
@@ -30,14 +37,6 @@ jobs:
           lfs: true
           fetch-depth: 0
           persist-credentials: true
-
-      - name: Checkout current public FMSC Source for real migration/installer checks
-        uses: actions/checkout@v7
-        with:
-          repository: ${{ github.repository_owner }}/FMSC-Source
-          ref: main
-          path: fmsc-source
-          persist-credentials: false
 
       - name: Repair only the historical typed GUID in a copy and validate the reattached snapshot
         shell: pwsh
@@ -48,7 +47,7 @@ jobs:
         shell: pwsh
         timeout-minutes: 20
         run: |
-          & ./fmsc-sandbox/Tests/RunSandboxSqlContract.ps1 -Schema 7 -SourceRoot (Join-Path $env:GITHUB_WORKSPACE 'fmsc-source') -FixtureRoot (Join-Path $env:GITHUB_WORKSPACE 'fmsc-sandbox')
+          & ./fmsc-sandbox/Tests/RunSandboxSqlContract.ps1 -Schema 7 -SourceRoot $env:GITHUB_WORKSPACE -FixtureRoot (Join-Path $env:GITHUB_WORKSPACE 'fmsc-sandbox')
 
       - uses: actions/setup-dotnet@v6
         with:
@@ -59,7 +58,6 @@ jobs:
 
       - name: Real Windows installer and first-run bootstrap on repaired schema 7
         shell: pwsh
-        working-directory: fmsc-source
         timeout-minutes: 45
         run: |
           & ./Tools/RunDisposableWindowsInstall.ps1 -ProjectDirectory . -Level3 -FixtureRoot (Join-Path $env:GITHUB_WORKSPACE 'fmsc-sandbox') -FixtureSchema 7
