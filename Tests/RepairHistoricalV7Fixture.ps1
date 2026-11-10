@@ -64,8 +64,16 @@ function Attach([string]$name,[string]$data,[string]$log) {
     $dataSql = $data.Replace("'","''")
     $logSql = $log.Replace("'","''")
     Invoke-Sql 'master' "CREATE DATABASE [$name] ON (FILENAME=N'$dataSql'),(FILENAME=N'$logSql') FOR ATTACH;"
+    $readOnly=[int](Invoke-Sql 'master' "SELECT is_read_only FROM sys.databases WHERE name=N'$name';" -Scalar)
+    Write-Host "Attached disposable catalog $name; read-only status: $readOnly"
+    if ($readOnly -eq 1) {
+        Invoke-Sql 'master' "ALTER DATABASE [$name] SET READ_WRITE WITH ROLLBACK IMMEDIATE;"
+        $readOnly=[int](Invoke-Sql 'master' "SELECT is_read_only FROM sys.databases WHERE name=N'$name';" -Scalar)
+        if ($readOnly -ne 0) { throw 'Disposable database copy did not become writable.' }
+    }
 }
 function Detach([string]$name) {
+    Write-Host "Detaching disposable catalog $name"
     Invoke-Sql 'master' "ALTER DATABASE [$name] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; EXEC sys.sp_detach_db @dbname=N'$name';"
 }
 $guard = @'
@@ -125,6 +133,7 @@ $attached = $false
 try {
     Attach $name $mdf $ldf
     $attached = $true
+    Write-Host "Checking schema-7 data-free and owner guards."
     Invoke-Sql $name $guard
     $before = [string](Invoke-Sql $name "SELECT CONVERT(nvarchar(36),TRY_CONVERT(uniqueidentifier,value)) FROM sys.extended_properties WHERE class=0 AND name=N'FMSC_QuickRegistrationScope';" -Scalar)
     Invoke-Sql $name 'DBCC CHECKDB WITH NO_INFOMSGS;'
