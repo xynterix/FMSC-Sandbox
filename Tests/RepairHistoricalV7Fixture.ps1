@@ -20,7 +20,7 @@ $expected = @(
     @{ Path=$record.mdf; Hash=$record.mdfSha256; Size=8388608 },
     @{ Path=$record.ldf; Hash=$record.ldfSha256; Size=75497472 }
 )
-$temp = Join-Path $env:RUNNER_TEMP ('fmsc-v7-typed-identity-' + $env:GITHUB_RUN_ID)
+$temp = Join-Path $env:LOCALAPPDATA ('fmsc-v7-typed-identity-' + $env:GITHUB_RUN_ID)
 if (Test-Path -LiteralPath $temp) { throw 'Existing repair workspace; refusing overwrite.' }
 New-Item -ItemType Directory -Path $temp | Out-Null
 foreach ($entry in $expected) {
