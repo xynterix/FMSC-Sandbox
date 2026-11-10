@@ -92,7 +92,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: ${{ github.repository }}
-          ref: 5a8c5130c9d7b76552bb73a753cd44c4d192d2d0
+          ref: 7d225d2b8e38aecd4a1c3cfa7ccfaf56685149b9
           path: fmsc-sandbox
           lfs: true
           persist-credentials: false
@@ -133,7 +133,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: ${{ github.repository }}
-          ref: 5a8c5130c9d7b76552bb73a753cd44c4d192d2d0
+          ref: 7d225d2b8e38aecd4a1c3cfa7ccfaf56685149b9
           path: fmsc-sandbox
           lfs: true
           persist-credentials: false
@@ -195,7 +195,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: ${{ github.repository }}
-          ref: 5a8c5130c9d7b76552bb73a753cd44c4d192d2d0
+          ref: 7d225d2b8e38aecd4a1c3cfa7ccfaf56685149b9
           path: fmsc-sandbox
           lfs: true
           persist-credentials: false
@@ -251,7 +251,7 @@ jobs:
           description="MDF/LDF v3+v7 -> v$TARGET_SCHEMA acceptance FAILED"
           if [[ "$SQL_RESULT" == 'success' && "$INSTALL_RESULT" == 'success' && "$CHAOS_RESULT" == 'success' ]]; then
             state='success'
-            description="MDF/LDF v3+v7 -> v$TARGET_SCHEMA SQL+installer PASS (fixture 5a8c5130)"
+            description="MDF/LDF v3+v7 -> v$TARGET_SCHEMA SQL+installer PASS (fixture 7d225d2b)"
           fi
           payload="$(jq -n --arg state "$state" --arg context 'fmsc/sandbox-mdf-ldf/v2' \
             --arg description "$description" --arg target_url "$RUN_URL" \
