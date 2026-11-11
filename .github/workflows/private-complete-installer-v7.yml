@@ -1,7 +1,7 @@
 name: '03 - Private Complete Windows Installer (synthetic v7 included)'
 
 # Execute this from PRIVATE FMSC-Sandbox. Source Workflow 03 itself stays
-# DB-free and publicly distributable; this workflow only publishes privately.
+# DB-free and publicly distributable; only verified synthetic v7 files are private.
 on:
   workflow_dispatch:
   # Revalidate the private packager whenever its own workflow changes.
