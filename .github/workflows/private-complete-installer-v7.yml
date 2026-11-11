@@ -1,0 +1,104 @@
+name: '03 - Private Complete Windows Installer (synthetic v7 included)'
+
+# Execute this from PRIVATE FMSC-Sandbox. Source Workflow 03 itself stays
+# DB-free and publicly distributable; this workflow only publishes privately.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fmsc-private-ready-installer
+  cancel-in-progress: false
+
+jobs:
+  resolve-source:
+    if: github.ref == 'refs/heads/main' && github.repository_id == '1449162585' && github.repository_owner_id == '316891609'
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - name: Pin exact FMSC-Source main commit and verify repository identity
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.github.com/repos/farhan2166-creator/FMSC-Source'
+          repo="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' "$api")"
+          jq -e '.id == 1412760928 and .owner.id == 316891609 and .private == false and .default_branch == "main"' <<<"$repo" >/dev/null
+          sha="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' "$api/branches/main" | jq -r '.commit.sha')"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid Source commit'; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Private installer Source revision: $sha" >> "$GITHUB_STEP_SUMMARY"
+
+  # Calls the existing public Workflow 03 package builder but runs it in this
+  # private Sandbox workflow run. Its output remains database-free.
+  package-base:
+    needs: resolve-source
+    uses: farhan2166-creator/FMSC-Source/.github/workflows/fmsc-complete-installer.yml@main
+    with:
+      source_sha: ${{ needs.resolve-source.outputs.sha }}
+    permissions:
+      contents: read
+
+  private-v7-package:
+    needs: [resolve-source, package-base]
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - name: Check out private packaging script
+        uses: actions/checkout@v7
+        with:
+          path: sandbox-harness
+          persist-credentials: false
+
+      - name: Check out accepted immutable v7 fixture with Git LFS
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository }}
+          ref: 7d225d2b8e38aecd4a1c3cfa7ccfaf56685149b9
+          path: frozen-fixtures
+          lfs: true
+          persist-credentials: false
+
+      - name: Download Source Workflow 03 installer from this private run
+        uses: actions/download-artifact@v7
+        with:
+          name: FMSC_SMS-Complete-Windows-x64-Add-Database-Files
+          path: ${{ runner.temp }}/fmsc-private-complete-installer
+
+      - name: Refuse a stale Source main SHA
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ needs.resolve-source.outputs.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $api = 'https://api.github.com/repos/farhan2166-creator/FMSC-Source'
+          $repo = Invoke-RestMethod -Uri $api
+          if ($repo.id -ne 1412760928 -or $repo.owner.id -ne 316891609 -or $repo.private) {
+              throw 'Source repository identity unexpectedly changed.'
+          }
+          $current = (Invoke-RestMethod -Uri "$api/branches/main").commit.sha
+          if ($current -cne $env:SOURCE_SHA) {
+              throw 'Source/main moved during private packaging; rerun for the current revision.'
+          }
+
+      - name: Validate and include only frozen synthetic v7 MDF/LDF copies
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ needs.resolve-source.outputs.sha }}
+        run: |
+          & ./sandbox-harness/Tests/PackageCompleteInstallerV7.ps1 `
+            -ArtifactRoot (Join-Path $env:RUNNER_TEMP 'fmsc-private-complete-installer') `
+            -FixtureRoot (Join-Path $env:GITHUB_WORKSPACE 'frozen-fixtures') `
+            -SourceSha $env:SOURCE_SHA
+
+      - name: Upload complete private fresh-install bundle with synthetic v7
+        uses: actions/upload-artifact@v7
+        with:
+          name: FMSC_SMS-Complete-Windows-x64-Synthetic-v7-Included
+          path: ${{ runner.temp }}/fmsc-private-complete-installer/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 14
