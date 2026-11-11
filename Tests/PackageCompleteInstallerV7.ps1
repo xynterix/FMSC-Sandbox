@@ -107,8 +107,12 @@ Set-Content -LiteralPath $readmeFile -Value $readme -Encoding utf8
 $dbFiles = @(Get-ChildItem -LiteralPath $artifact -Recurse -File |
     Where-Object { $_.Extension.ToLowerInvariant() -in @('.mdf','.ldf','.ndf','.bak','.bacpac','.dacpac') })
 if ($dbFiles.Count -ne 2) { throw 'Final installer contains an unexpected number of database files.' }
-$names = @($dbFiles | ForEach-Object { [System.IO.Path]::GetRelativePath($artifact, $_.FullName).Replace('\','/') } | Sort-Object)
-if ($names[0] -cne 'Database/FMSC_DB.mdf' -or $names[1] -cne 'Database/FMSC_DB_log.ldf') {
+$names = @($dbFiles | ForEach-Object { [System.IO.Path]::GetRelativePath($artifact, $_.FullName).Replace('\','/') })
+# PowerShell's culture-aware Sort-Object can put '_' before '.', so membership
+# must be checked as an exact set, not by positions in a sorted array.
+if ($names.Count -ne 2 -or
+    -not ($names -ccontains 'Database/FMSC_DB.mdf') -or
+    -not ($names -ccontains 'Database/FMSC_DB_log.ldf')) {
     throw 'Final installer database paths are not exactly the two expected files.'
 }
 $checksumFile = Join-Path $artifact 'SHA256SUMS.txt'
