@@ -4,6 +4,13 @@ name: '03 - Private Complete Windows Installer (synthetic v7 included)'
 # DB-free and publicly distributable; this workflow only publishes privately.
 on:
   workflow_dispatch:
+  # Revalidate the private packager whenever its own workflow changes.
+  # No Source push, Source PR, fixture modification or ordinary Sandbox push
+  # can publish these private synthetic database files.
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/private-complete-installer-v7.yml'
 
 permissions:
   contents: read
