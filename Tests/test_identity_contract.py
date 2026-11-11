@@ -56,6 +56,10 @@ for required in (
     "Source commit: $SourceSha", "SHA256SUMS.txt",
 ):
     assert required in private_packager, f"Private fixture validation missing: {required}"
+assert "-ccontains 'Database/FMSC_DB.mdf'" in private_packager
+assert "-ccontains 'Database/FMSC_DB_log.ldf'" in private_packager
+assert "$names[0]" not in private_packager, "Do not compare culture-sorted file positions"
+assert "'Tests/PackageCompleteInstallerV7.ps1'" in private_bundle
 assert "pull_request:" not in private_bundle, "Private fixture bundle must never run for PR code"
 assert "repository_dispatch:" not in private_bundle, "Private bundle must remain manually dispatched"
 print("PASS: private v7 package is restricted to Sandbox, frozen LFS checksums and exact Source SHA.")
