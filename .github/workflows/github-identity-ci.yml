@@ -23,3 +23,21 @@ jobs:
       - name: Verify immutable repository identities and exact-commit fixture guard
         shell: bash
         run: python3 Tests/test_identity_contract.py
+      - name: Verify authenticated GitHub identity requests work on hosted runner
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          api() {
+            curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
+              -H "Authorization: Bearer $GITHUB_TOKEN" "$1"
+          }
+          login="$(api 'https://api.github.com/user/316891609' |
+            jq -r 'select(.id == 316891609 and .type == "User") | .login')"
+          [[ "$login" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$ ]]
+          api "https://api.github.com/repos/$login/FMSC-Source" |
+            jq -e '.id == 1412760928 and .owner.id == 316891609 and .private == false' >/dev/null
+          api "https://api.github.com/repos/$login/FMSC-Source/branches/main" |
+            jq -e '.commit.sha | test("^[0-9a-f]{40}$")' >/dev/null
+          echo 'PASS: authenticated GitHub identity, public Source repo and main SHA.'

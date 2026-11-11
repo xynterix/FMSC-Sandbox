@@ -31,25 +31,26 @@ jobs:
       source_repo: ${{ steps.source.outputs.source_repo }}
     steps:
       - id: source
-        name: Resolve exact public Source commit without credentials
+        name: Resolve exact public Source commit with workflow authentication
         shell: bash
         env:
           INPUT_SHA: ${{ inputs.source_sha }}
           EVENT_NAME: ${{ github.event_name }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          owner="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
+          owner="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" \
             'https://api.github.com/user/316891609')"
           login="$(jq -r 'select(.id == 316891609 and .type == "User") | .login' <<<"$owner")"
           [[ "$login" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$ ]] || exit 1
           source_repo="$login/FMSC-Source"
-          source="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
+          source="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" \
             "https://api.github.com/repos/$source_repo")"
           jq -e --arg repo "$source_repo" '
             .id == 1412760928 and .owner.id == 316891609 and
             .full_name == $repo and .name == "FMSC-Source" and .private == false
           ' <<<"$source" >/dev/null || exit 1
-          main_sha="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
+          main_sha="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" \
             "https://api.github.com/repos/$source_repo/branches/main" | jq -r '.commit.sha')"
           if [[ "$EVENT_NAME" == "push" ]]; then
             sha="$main_sha"
@@ -216,40 +217,51 @@ jobs:
   # Status can be issued only for the exact current Source/main commit.
   attest:
     needs: [resolve, sql-contract, real-installer, migration-chaos]
-    if: ${{ always() && github.ref == 'refs/heads/main' && github.repository_id == '1449162585' && github.repository_owner_id == '316891609' && needs.resolve.result == 'success' }}
+    if: ${{ always() && github.ref == 'refs/heads/main' && github.repository_id == '1449162585' && github.repository_owner_id == '316891609' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
-      SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+      SOURCE_SHA: ${{ needs.resolve.outputs.source_sha || inputs.source_sha }}
       TARGET_SCHEMA: ${{ needs.resolve.outputs.target_schema }}
+      RESOLVE_RESULT: ${{ needs.resolve.result }}
       SQL_RESULT: ${{ needs.sql-contract.result }}
       INSTALL_RESULT: ${{ needs.real-installer.result }}
       CHAOS_RESULT: ${{ needs.migration-chaos.result }}
       ATTEST_TOKEN: ${{ secrets.FMSC_SOURCE_ATTEST_TOKEN }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       SOURCE_REPO: ${{ needs.resolve.outputs.source_repo }}
+      GITHUB_TOKEN: ${{ github.token }}
     steps:
       - name: Attest only exact current Source main SHA, fail closed
         shell: bash
         run: |
           set -euo pipefail
           [[ "$GITHUB_REPOSITORY_ID" == '1449162585' && "$GITHUB_REPOSITORY_OWNER_ID" == '316891609' ]] || exit 1
-          owner="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' 'https://api.github.com/user/316891609')"
+          owner="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" 'https://api.github.com/user/316891609')"
           login="$(jq -r 'select(.id == 316891609 and .type == "User") | .login' <<<"$owner")"
           [[ "$login" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$ ]] || exit 1
-          [[ "$SOURCE_REPO" == "$login/FMSC-Source" ]] || exit 1
+          # Resolve failures have no outputs; the dispatch input remains usable
+          # only after independent immutable owner/repository and HEAD checks.
+          [[ -z "$SOURCE_REPO" || "$SOURCE_REPO" == "$login/FMSC-Source" ]] || exit 1
+          SOURCE_REPO="$login/FMSC-Source"
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'Missing or invalid exact Source SHA; no attestation granted.'; exit 1; }
           api="https://api.github.com/repos/$SOURCE_REPO"
-          source="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' "$api")"
+          source="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" "$api")"
           jq -e --arg repo "$SOURCE_REPO" '.id == 1412760928 and .owner.id == 316891609 and .full_name == $repo' <<<"$source" >/dev/null || exit 1
-          main="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' "$api/branches/main" | jq -r '.commit.sha')"
+          main="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" "$api/branches/main" | jq -r '.commit.sha')"
           if [[ "$SOURCE_SHA" != "$main" ]]; then
             echo 'Acceptance INVALIDATED: Source/main changed during testing; no attestation granted.'
             exit 1
           fi
           [[ -n "$ATTEST_TOKEN" ]] || { echo 'FMSC_SOURCE_ATTEST_TOKEN not configured; approval withheld.'; exit 1; }
           state='failure'
-          description="MDF/LDF v3+v7 -> v$TARGET_SCHEMA acceptance FAILED"
-          if [[ "$SQL_RESULT" == 'success' && "$INSTALL_RESULT" == 'success' && "$CHAOS_RESULT" == 'success' ]]; then
+          description="MDF/LDF acceptance FAILED (resolve=$RESOLVE_RESULT)"
+          # A failed source resolver still emits a trusted failure status for
+          # this exact dispatch SHA, allowing Workflow 04 to fail promptly.
+          # Never approve when the resolver or any required job was skipped.
+          if [[ "$RESOLVE_RESULT" == 'success' &&
+                "$TARGET_SCHEMA" =~ ^[1-9][0-9]*$ &&
+                "$SQL_RESULT" == 'success' && "$INSTALL_RESULT" == 'success' && "$CHAOS_RESULT" == 'success' ]]; then
             state='success'
             description="MDF/LDF v3+v7 -> v$TARGET_SCHEMA SQL+installer PASS (fixture 7d225d2b)"
           fi

@@ -32,6 +32,20 @@ for value in ("https://api.github.com/user/316891609", ".id == 1412760928",
               "repository: ${{ github.repository }}"):
     assert value in chaos, f"Source resolver or fixture isolation lost: {value}"
 
+# A resolver failure must reach the trusted attestor (rather than leaving
+# Workflow 04 polling for its full timeout), but success still requires all
+# required suites and an independently resolved exact Source commit.
+assert "if: ${{ always()" in accept
+assert "SOURCE_SHA: ${{ needs.resolve.outputs.source_sha || inputs.source_sha }}" in accept
+assert "RESOLVE_RESULT: ${{ needs.resolve.result }}" in accept
+assert 'if [[ "$RESOLVE_RESULT" == \'success\' &&' in accept
+assert '"$SQL_RESULT" == \'success\'' in accept
+assert '"$INSTALL_RESULT" == \'success\'' in accept
+assert '"$CHAOS_RESULT" == \'success\'' in accept
+assert '[[ "$SOURCE_SHA" != "$main" ]]' in accept
+assert 'state=\'failure\'' in accept
+assert '-H "Authorization: Bearer $GITHUB_TOKEN"' in accept
+
 assert "1449162585" in retention and "316891609" in retention
 assert "GITHUB_REPOSITORY_OWNER_ID" in harness
 print("PASS: Sandbox workflows bind to immutable IDs, preserve fixtures and exact-commit SQL/installer/chaos gate.")
