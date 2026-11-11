@@ -13,6 +13,10 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/private-release-acceptance.yml'
+      # The trusted fixture validators are part of the acceptance gate;
+      # changes to them must execute the full exact-Source-SHA acceptance.
+      - 'Tests/RunSandboxSqlContract.ps1'
+      - 'Tests/RunHistoricalMigrationChaos.ps1'
 
 permissions:
   contents: read
