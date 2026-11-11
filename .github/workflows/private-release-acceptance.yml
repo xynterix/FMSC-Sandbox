@@ -112,7 +112,10 @@ jobs:
             -FixtureRoot (Join-Path $env:GITHUB_WORKSPACE 'fmsc-sandbox')
 
   real-installer:
-    needs: [resolve, sql-contract]
+    # Each matrix cell installs into its own disposable Windows runner and
+    # revalidates the immutable fixture. It does not consume sql-contract output.
+    # Run alongside SQL contracts; publication still requires ALL checks in attest.
+    needs: resolve
     runs-on: windows-2022
     timeout-minutes: 60
     strategy:
@@ -179,7 +182,9 @@ jobs:
   # the version currently declared by the exact Source commit.
   # No attestation token or publishing token is available to this job.
   migration-chaos:
-    needs: [resolve, sql-contract]
+    # Separate disposable copy and independent runner; no dependency on
+    # sql-contract artifacts or DB state. Attestation still gates on all jobs.
+    needs: resolve
     runs-on: windows-2022
     timeout-minutes: 45
     permissions:
