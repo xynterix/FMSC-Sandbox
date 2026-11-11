@@ -11,6 +11,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/private-complete-installer-v7.yml'
+      - 'Tests/PackageCompleteInstallerV7.ps1'
 
 permissions:
   contents: read
