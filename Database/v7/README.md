@@ -6,4 +6,4 @@ On 2026-11-10 a one-time Windows SQL repair was validated against copies, then u
 
 **Do not seed Administrator, Accountant, permissions, admission counters or billing settings in this historical file.** Production migrations 15 and 16 initialize first-run reference data when the empty schema-7 fixture is upgraded. The permanent fixture must stay empty of real users, students, credentials and operational school records.
 
-The original historical source archive (`FMSC-schema-v7.zip`) and earlier Git history remain available unchanged. The approved repaired binary hashes are recorded in `Tests/manifest.json`. Treat this pair as frozen after acceptance: future migrations and synthetic records belong on **disposable copies**, never in the permanent files.
+The earlier historical fixture revisions remain recoverable from Git history. The approved repaired binary hashes are recorded in `Tests/manifest.json`. Treat this pair as frozen after acceptance: future migrations and synthetic records belong on **disposable copies**, never in the permanent files.
