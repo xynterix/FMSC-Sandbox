@@ -76,6 +76,24 @@ try {
     if ($attempt -eq 3) { throw 'SQL LocalDB could not start after 3 attempts.' }
     Start-Sleep -Seconds 3
   }
+  # GitHub-hosted Windows occasionally reports a successful LocalDB start
+  # before MSSQLLocalDB accepts connections. Check actual SQL readiness, not
+  # just the process exit code; still fail closed on persistent startup errors.
+  $ready=$false
+  for ($attempt=1;$attempt -le 4;$attempt++) {
+    try {
+      [void](Query master 'SELECT 1 AS Ready;')
+      $ready=$true
+      break
+    } catch {
+      if ($attempt -eq 4) {
+        throw "Disposable LocalDB did not become queryable after 4 checks: $($_.Exception.Message)"
+      }
+      Start-Sleep -Seconds (2 * $attempt)
+      & $exe start MSSQLLocalDB | Out-Null
+    }
+  }
+  if (-not $ready) { throw 'Disposable LocalDB readiness was not established.' }
   $mdf=(Join-Path $root 'FMSC_DB.mdf').Replace("'","''")
   $ldf=(Join-Path $root 'FMSC_DB_log.ldf').Replace("'","''")
   Run master "CREATE DATABASE [$db] ON (FILENAME=N'$mdf'),(FILENAME=N'$ldf') FOR ATTACH;"
