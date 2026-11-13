@@ -52,6 +52,9 @@ jobs:
 
   private-v7-package:
     needs: [resolve-source, package-base]
+    permissions:
+      contents: read
+      actions: write
     runs-on: windows-2022
     timeout-minutes: 20
     steps:
@@ -61,14 +64,19 @@ jobs:
           path: sandbox-harness
           persist-credentials: false
 
-      - name: Check out accepted immutable v7 fixture with Git LFS
+      - name: Check out accepted immutable v7 fixture without downloading other LFS files
         uses: actions/checkout@v7
         with:
           repository: ${{ github.repository }}
           ref: 7d225d2b8e38aecd4a1c3cfa7ccfaf56685149b9
           path: frozen-fixtures
-          lfs: true
+          lfs: false
           persist-credentials: false
+      - name: Hydrate only the pinned schema-7 MDF/LDF
+        shell: pwsh
+        env:
+          FMSC_FIXTURE_READ_TOKEN: ${{ github.token }}
+        run: ./sandbox-harness/Tests/FetchPinnedFixture.ps1 -Schema 7 -FixtureRoot (Join-Path $env:GITHUB_WORKSPACE 'frozen-fixtures')
 
       - name: Download Source Workflow 03 installer from this private run
         uses: actions/download-artifact@v7
@@ -107,6 +115,40 @@ jobs:
         with:
           name: FMSC_SMS-Complete-Windows-x64-Synthetic-v7-Included
           path: ${{ runner.temp }}/fmsc-private-complete-installer/
-          compression-level: 0
+          compression-level: 6
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
+
+      # Only after the final private package was uploaded successfully.
+      # Never delete a failed or unpublished package needed for recovery.
+      - name: Delete redundant base artifact after successful private packaging
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            if (context.repo.repo !== 'FMSC-Sandbox' ||
+                context.repo.owner !== 'farhan2166-creator' ||
+                context.payload.repository?.id !== 1449162585) {
+              throw new Error('Refusing artifact deletion outside the private Sandbox repository.');
+            }
+            const { owner, repo } = context.repo;
+            const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+              owner, repo, run_id: context.runId, per_page: 100
+            });
+            const finalName = 'FMSC_SMS-Complete-Windows-x64-Synthetic-v7-Included';
+            const baseName = 'FMSC_SMS-Complete-Windows-x64-Add-Database-Files';
+            const finished = artifacts.find(a => a.name === finalName && !a.expired && a.size_in_bytes > 0);
+            if (!finished) {
+              throw new Error('Verified private output artifact is missing: preserving intermediate artifact.');
+            }
+            const intermediate = artifacts.find(a => a.name === baseName && !a.expired);
+            if (!intermediate) {
+              core.info('No redundant intermediate artifact remains.');
+            } else {
+              try {
+                await github.rest.actions.deleteArtifact({ owner, repo, artifact_id: intermediate.id });
+                core.info('Removed redundant base installer artifact after successful private upload.');
+              } catch (error) {
+                core.warning('Intermediate cleanup failed; the verified private package remains intact: ' + error.message);
+              }
+            }
