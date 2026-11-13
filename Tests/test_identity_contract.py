@@ -21,9 +21,9 @@ for value in ("https://api.github.com/user/316891609",
               "repository: ${{ needs.resolve.outputs.source_repo }}",
               "repository: ${{ github.repository }}",
               "ref: 7d225d2b8e38aecd4a1c3cfa7ccfaf56685149b9",
-              "needs: [resolve, sql-contract, real-installer, migration-chaos]",
+              "needs: [resolve, sql-contract, real-installer]",
               "fmsc/sandbox-mdf-ldf/v2",
-              "SOURCE_SHA", "SQL_RESULT", "INSTALL_RESULT", "CHAOS_RESULT",
+              "SOURCE_SHA", "SQL_RESULT", "INSTALL_RESULT",
               "FMSC_SOURCE_ATTEST_TOKEN"):
     assert value in accept, f"Required exact-commit release boundary missing: {value}"
 
@@ -41,14 +41,34 @@ assert "RESOLVE_RESULT: ${{ needs.resolve.result }}" in accept
 assert 'if [[ "$RESOLVE_RESULT" == \'success\' &&' in accept
 assert '"$SQL_RESULT" == \'success\'' in accept
 assert '"$INSTALL_RESULT" == \'success\'' in accept
-assert '"$CHAOS_RESULT" == \'success\'' in accept
 assert '[[ "$SOURCE_SHA" != "$main" ]]' in accept
 assert 'state=\'failure\'' in accept
 assert '-H "Authorization: Bearer $GITHUB_TOKEN"' in accept
 
 assert "1449162585" in retention and "316891609" in retention
 assert "GITHUB_REPOSITORY_OWNER_ID" in harness
-print("PASS: Sandbox workflows bind to immutable IDs, preserve fixtures and exact-commit SQL/installer/chaos gate.")
+# The publication gate now validates the latest supported historical baseline (v7).
+# v3 failure/restore rehearsals remain a separately invoked workflow.
+assert accept.count("schema: [7]") == 2
+assert "matrix.schema" in accept
+assert "migration-chaos:" not in accept
+assert "workflow_dispatch:" in chaos
+assert "RunHistoricalMigrationChaos.ps1" in chaos
+assert "FetchPinnedFixture.ps1 -Schema 7" in accept
+assert accept.count("lfs: false") == 2
+assert "lfs: true" not in accept
+
+fixture_hydrator = (root / "Tests/FetchPinnedFixture.ps1").read_text(encoding="utf-8")
+for required in (
+    "FMSC_FIXTURE_READ_TOKEN", "GITHUB_REPOSITORY_ID",
+    "7d225d2b8e38aecd4a1c3cfa7ccfaf56685149b9",
+    "lfs pull --include=", "Get-FileHash", "SHA256",
+    "FMSC_DB.mdf", "FMSC_DB_log.ldf",
+):
+    assert required in fixture_hydrator, f"Pinned selective-LFS verification missing: {required}"
+assert "persist-credentials: false" in accept
+assert "GIT_LFS_SKIP_SMUDGE: '1'" in accept
+print("PASS: immutable IDs, exact-commit v7 SQL/installer gate and separate manual v3 chaos.")
 
 private_bundle = (root / ".github/workflows/private-complete-installer-v7.yml").read_text(encoding="utf-8")
 private_packager = (root / "Tests/PackageCompleteInstallerV7.ps1").read_text(encoding="utf-8")
@@ -58,7 +78,7 @@ for required in (
     "uses: farhan2166-creator/FMSC-Source/.github/workflows/fmsc-complete-installer.yml@main",
     "source_sha: ${{ needs.resolve-source.outputs.sha }}",
     "ref: 7d225d2b8e38aecd4a1c3cfa7ccfaf56685149b9",
-    "lfs: true", "actions/download-artifact@v7",
+    "lfs: false", "actions/download-artifact@v7",
     "actions/upload-artifact@v7",
     "FMSC_SMS-Complete-Windows-x64-Synthetic-v7-Included",
 ):
@@ -74,6 +94,9 @@ assert "-ccontains 'Database/FMSC_DB.mdf'" in private_packager
 assert "-ccontains 'Database/FMSC_DB_log.ldf'" in private_packager
 assert "$names[0]" not in private_packager, "Do not compare culture-sorted file positions"
 assert "'Tests/PackageCompleteInstallerV7.ps1'" in private_bundle
+assert "FetchPinnedFixture.ps1 -Schema 7" in private_bundle
+assert "deleteArtifact" in private_bundle
+assert "compression-level: 6" in private_bundle
 assert "pull_request:" not in private_bundle, "Private fixture bundle must never run for PR code"
 assert "repository_dispatch:" not in private_bundle, "Private bundle must remain manually dispatched"
 print("PASS: private v7 package is restricted to Sandbox, frozen LFS checksums and exact Source SHA.")
