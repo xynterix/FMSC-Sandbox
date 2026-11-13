@@ -39,6 +39,21 @@ jobs:
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid Source commit'; exit 1; }
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "Private installer Source revision: $sha" >> "$GITHUB_STEP_SUMMARY"
+      # Avoid spending minutes on Windows packaging if Sandbox has no
+      # registration credential for a configured Google Desktop client.
+      - name: Fail early for missing private Google Desktop registration
+        shell: bash
+        env:
+          REGISTRATION: ${{ secrets.FMSC_GOOGLE_DESKTOP_JSON }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          providers="$(curl -fsSL --retry 3 "https://raw.githubusercontent.com/$GITHUB_REPOSITORY_OWNER/FMSC-Source/$SOURCE_SHA/CloudBackupProviders.json")"
+          google_client="$(jq -r '.GoogleClientId // ""' <<<"$providers")"
+          if [[ -n "$google_client" && -z "$REGISTRATION" ]]; then
+            echo '::error::FMSC-Sandbox needs its own FMSC_GOOGLE_DESKTOP_JSON Actions secret for the private complete installer.'
+            exit 1
+          fi
 
   # Calls the existing public Workflow 03 package builder but runs it in this
   # private Sandbox workflow run. Its output remains database-free.
@@ -47,6 +62,8 @@ jobs:
     uses: farhan2166-creator/FMSC-Source/.github/workflows/fmsc-complete-installer.yml@main
     with:
       source_sha: ${{ needs.resolve-source.outputs.sha }}
+    secrets:
+      FMSC_GOOGLE_DESKTOP_JSON: ${{ secrets.FMSC_GOOGLE_DESKTOP_JSON }}
     permissions:
       contents: read
 

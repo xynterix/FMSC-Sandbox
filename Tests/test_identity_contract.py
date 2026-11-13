@@ -94,6 +94,8 @@ assert "-ccontains 'Database/FMSC_DB.mdf'" in private_packager
 assert "-ccontains 'Database/FMSC_DB_log.ldf'" in private_packager
 assert "$names[0]" not in private_packager, "Do not compare culture-sorted file positions"
 assert "'Tests/PackageCompleteInstallerV7.ps1'" in private_bundle
+assert "FMSC_GOOGLE_DESKTOP_JSON: ${{ secrets.FMSC_GOOGLE_DESKTOP_JSON }}" in private_bundle
+assert "Fail early for missing private Google Desktop registration" in private_bundle
 assert "FetchPinnedFixture.ps1 -Schema 7" in private_bundle
 assert "deleteArtifact" in private_bundle
 assert "compression-level: 6" in private_bundle
