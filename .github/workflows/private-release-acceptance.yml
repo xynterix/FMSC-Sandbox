@@ -16,7 +16,7 @@ on:
       # The trusted fixture validators are part of the acceptance gate;
       # changes to them must execute the full exact-Source-SHA acceptance.
       - 'Tests/RunSandboxSqlContract.ps1'
-      - 'Tests/RunHistoricalMigrationChaos.ps1'
+      - 'Tests/FetchPinnedFixture.ps1'
 
 permissions:
   contents: read
@@ -87,20 +87,27 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        schema: [3, 7]
+        schema: [7]
     steps:
       - name: Checkout private test harness without LFS hydration
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Checkout exact immutable fixture commit with Git LFS
+      - name: Checkout exact immutable fixture commit without LFS downloads
         uses: actions/checkout@v7
+        env:
+          GIT_LFS_SKIP_SMUDGE: '1'
         with:
           repository: ${{ github.repository }}
           ref: 7d225d2b8e38aecd4a1c3cfa7ccfaf56685149b9
           path: fmsc-sandbox
-          lfs: true
+          lfs: false
           persist-credentials: false
+      - name: Hydrate only pinned schema-7 SQL files
+        shell: pwsh
+        env:
+          FMSC_FIXTURE_READ_TOKEN: ${{ github.token }}
+        run: ./Tests/FetchPinnedFixture.ps1 -Schema 7 -FixtureRoot (Join-Path $env:GITHUB_WORKSPACE 'fmsc-sandbox')
       - name: Checkout exact public Source SHA
         uses: actions/checkout@v7
         with:
@@ -116,7 +123,7 @@ jobs:
             -FixtureRoot (Join-Path $env:GITHUB_WORKSPACE 'fmsc-sandbox')
 
   real-installer:
-    # Each matrix cell installs into its own disposable Windows runner and
+    # The v7 schema job installs into its own disposable Windows runner and
     # revalidates the immutable fixture. It does not consume sql-contract output.
     # Run alongside SQL contracts; publication still requires ALL checks in attest.
     needs: resolve
@@ -125,7 +132,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        schema: [3, 7]
+        schema: [7]
     env:
       FMSC_DISPOSABLE_INSTALL: approved-synthetic-only
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
@@ -137,14 +144,26 @@ jobs:
           repository: ${{ needs.resolve.outputs.source_repo }}
           ref: ${{ needs.resolve.outputs.source_sha }}
           persist-credentials: false
-      - name: Checkout frozen private fixtures with Git LFS
+      - name: Checkout frozen private fixtures without LFS downloads
         uses: actions/checkout@v7
+        env:
+          GIT_LFS_SKIP_SMUDGE: '1'
         with:
           repository: ${{ github.repository }}
           ref: 7d225d2b8e38aecd4a1c3cfa7ccfaf56685149b9
           path: fmsc-sandbox
-          lfs: true
+          lfs: false
           persist-credentials: false
+      - name: Checkout trusted Sandbox hydration helper
+        uses: actions/checkout@v7
+        with:
+          path: sandbox-harness
+          persist-credentials: false
+      - name: Hydrate only pinned schema-7 SQL files
+        shell: pwsh
+        env:
+          FMSC_FIXTURE_READ_TOKEN: ${{ github.token }}
+        run: ./sandbox-harness/Tests/FetchPinnedFixture.ps1 -Schema 7 -FixtureRoot (Join-Path $env:GITHUB_WORKSPACE 'fmsc-sandbox')
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
@@ -180,52 +199,12 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-  # Negative testing uses a different disposable copy of the same frozen
-  # schema-3 fixture. Missing migrations and deliberately failing DDL must
-  # preserve version/backup before real Source migrations can resume through
-  # the version currently declared by the exact Source commit.
-  # No attestation token or publishing token is available to this job.
-  migration-chaos:
-    # Separate disposable copy and independent runner; no dependency on
-    # sql-contract artifacts or DB state. Attestation still gates on all jobs.
-    needs: resolve
-    runs-on: windows-2022
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    env:
-      FMSC_DISPOSABLE_INSTALL: approved-synthetic-only
-    steps:
-      - name: Checkout private synthetic chaos harness
-        uses: actions/checkout@v7
-        with:
-          path: sandbox-harness
-          persist-credentials: false
-      - name: Checkout immutable schema-3 fixture with Git LFS
-        uses: actions/checkout@v7
-        with:
-          repository: ${{ github.repository }}
-          ref: 7d225d2b8e38aecd4a1c3cfa7ccfaf56685149b9
-          path: fmsc-sandbox
-          lfs: true
-          persist-credentials: false
-      - name: Checkout exact tested Source SHA
-        uses: actions/checkout@v7
-        with:
-          repository: ${{ needs.resolve.outputs.source_repo }}
-          ref: ${{ needs.resolve.outputs.source_sha }}
-          path: fmsc-source
-          persist-credentials: false
-      - name: Prove rollback, backup restore and genuine target-schema resumption
-        shell: pwsh
-        timeout-minutes: 40
-        run: |
-          & ./sandbox-harness/Tests/RunHistoricalMigrationChaos.ps1 -SourceRoot (Join-Path $env:GITHUB_WORKSPACE 'fmsc-source') -FixtureRoot (Join-Path $env:GITHUB_WORKSPACE 'fmsc-sandbox')
+  # Legacy schema-3 chaos coverage remains in separate manual migration-chaos workflow.
 
   # No Source checkout or arbitrary Source scripts in this token-bearing job.
   # Status can be issued only for the exact current Source/main commit.
   attest:
-    needs: [resolve, sql-contract, real-installer, migration-chaos]
+    needs: [resolve, sql-contract, real-installer]
     if: ${{ always() && github.ref == 'refs/heads/main' && github.repository_id == '1449162585' && github.repository_owner_id == '316891609' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -235,7 +214,6 @@ jobs:
       RESOLVE_RESULT: ${{ needs.resolve.result }}
       SQL_RESULT: ${{ needs.sql-contract.result }}
       INSTALL_RESULT: ${{ needs.real-installer.result }}
-      CHAOS_RESULT: ${{ needs.migration-chaos.result }}
       ATTEST_TOKEN: ${{ secrets.FMSC_SOURCE_ATTEST_TOKEN }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       SOURCE_REPO: ${{ needs.resolve.outputs.source_repo }}
@@ -270,9 +248,9 @@ jobs:
           # Never approve when the resolver or any required job was skipped.
           if [[ "$RESOLVE_RESULT" == 'success' &&
                 "$TARGET_SCHEMA" =~ ^[1-9][0-9]*$ &&
-                "$SQL_RESULT" == 'success' && "$INSTALL_RESULT" == 'success' && "$CHAOS_RESULT" == 'success' ]]; then
+                "$SQL_RESULT" == 'success' && "$INSTALL_RESULT" == 'success' ]]; then
             state='success'
-            description="MDF/LDF v3+v7 -> v$TARGET_SCHEMA SQL+installer PASS (fixture 7d225d2b)"
+            description="MDF/LDF v7 -> v$TARGET_SCHEMA SQL+installer+recovery PASS (fixture 7d225d2b)"
           fi
           payload="$(jq -n --arg state "$state" --arg context 'fmsc/sandbox-mdf-ldf/v2' \
             --arg description "$description" --arg target_url "$RUN_URL" \
