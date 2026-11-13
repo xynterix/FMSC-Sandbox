@@ -66,6 +66,8 @@ jobs:
 
       - name: Check out accepted immutable v7 fixture without downloading other LFS files
         uses: actions/checkout@v7
+        env:
+          GIT_LFS_SKIP_SMUDGE: '1'
         with:
           repository: ${{ github.repository }}
           ref: 7d225d2b8e38aecd4a1c3cfa7ccfaf56685149b9
@@ -127,7 +129,7 @@ jobs:
           github-token: ${{ github.token }}
           script: |
             if (context.repo.repo !== 'FMSC-Sandbox' ||
-                context.repo.owner !== 'farhan2166-creator' ||
+                context.payload.repository?.owner?.id !== 316891609 ||
                 context.payload.repository?.id !== 1449162585) {
               throw new Error('Refusing artifact deletion outside the private Sandbox repository.');
             }
