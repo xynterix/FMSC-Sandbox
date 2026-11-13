@@ -95,6 +95,8 @@ jobs:
           persist-credentials: false
       - name: Checkout exact immutable fixture commit without LFS downloads
         uses: actions/checkout@v7
+        env:
+          GIT_LFS_SKIP_SMUDGE: '1'
         with:
           repository: ${{ github.repository }}
           ref: 7d225d2b8e38aecd4a1c3cfa7ccfaf56685149b9
@@ -144,6 +146,8 @@ jobs:
           persist-credentials: false
       - name: Checkout frozen private fixtures without LFS downloads
         uses: actions/checkout@v7
+        env:
+          GIT_LFS_SKIP_SMUDGE: '1'
         with:
           repository: ${{ github.repository }}
           ref: 7d225d2b8e38aecd4a1c3cfa7ccfaf56685149b9
