@@ -78,7 +78,7 @@ private_packager = (root / "Tests/PackageCompleteInstallerV7.ps1").read_text(enc
 for required in (
     "workflow_dispatch:", "github.repository_id == '1449162585'",
     "github.repository_owner_id == '316891609'",
-    "https://api.github.com/repositories/1412760928",
+    "GITHUB_REPOSITORY_OWNER",
     "source_sha: ${{ needs.resolve-source.outputs.sha }}",
     "ref: 7d225d2b8e38aecd4a1c3cfa7ccfaf56685149b9",
     "lfs: false", "actions/download-artifact@v7",
@@ -96,7 +96,9 @@ if owner:
     assert f"uses: {owner}/{reusable}" in private_bundle, "Reusable workflow must point at the current account"
 else:
     assert search(r"(?m)^    uses: [A-Za-z0-9-]+/" + reusable.replace(".", r"\.") + r"$", private_bundle), "Reusable workflow reference missing"
-assert private_bundle.count("https://api.github.com/repositories/1412760928") == 2
+assert 'api="https://api.github.com/repos/${GITHUB_REPOSITORY_OWNER}/FMSC-Source"' in private_bundle
+assert '$api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY_OWNER/FMSC-Source"' in private_bundle
+assert "https://api.github.com/repositories/1412760928" not in private_bundle
 for required in (
     "GITHUB_REPOSITORY_ID", "1449162585", "fmsc-sandbox-fixtures/v1",
     "validated-schema-only", "Get-FileHash", "SHA256",
