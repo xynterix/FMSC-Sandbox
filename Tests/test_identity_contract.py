@@ -3,6 +3,8 @@
 Only examines workflow source; never opens a private fixture or calls GitHub.
 """
 from pathlib import Path
+from os import environ
+from re import search
 
 root = Path(__file__).resolve().parent.parent
 accept = (root / ".github/workflows/private-release-acceptance.yml").read_text(encoding="utf-8")
@@ -12,7 +14,8 @@ harness = (root / "Tests/RunHistoricalMigrationChaos.ps1").read_text(encoding="u
 
 for name, content in (("acceptance", accept), ("chaos", chaos),
                       ("retention", retention), ("harness", harness)):
-    assert "farhan2166-creator" not in content, f"Mutable GitHub username in {name}"
+    # Only immutable repository IDs are allowed in identity-sensitive checks.
+    assert not search(r"https://api\.github\.com/repos/[^/]+/FMSC-(?:Source|Sandbox)", content), f"Mutable GitHub API path in {name}"
     assert "1449162585" in content, f"Missing immutable Sandbox repository ID in {name}"
 
 for value in ("https://api.github.com/user/316891609",
@@ -75,7 +78,7 @@ private_packager = (root / "Tests/PackageCompleteInstallerV7.ps1").read_text(enc
 for required in (
     "workflow_dispatch:", "github.repository_id == '1449162585'",
     "github.repository_owner_id == '316891609'",
-    "uses: farhan2166-creator/FMSC-Source/.github/workflows/fmsc-complete-installer.yml@main",
+    "https://api.github.com/repositories/1412760928",
     "source_sha: ${{ needs.resolve-source.outputs.sha }}",
     "ref: 7d225d2b8e38aecd4a1c3cfa7ccfaf56685149b9",
     "lfs: false", "actions/download-artifact@v7",
@@ -83,6 +86,17 @@ for required in (
     "FMSC_SMS-Complete-Windows-x64-Synthetic-v7-Included",
 ):
     assert required in private_bundle, f"Private v7 packaging boundary missing: {required}"
+
+# GitHub requires a literal owner in a cross-repository reusable-workflow
+# 'uses:' reference. Check against the current Actions owner, not a frozen
+# historical username; offline checks validate syntax without binding a name.
+reusable = "FMSC-Source/.github/workflows/fmsc-complete-installer.yml@main"
+owner = environ.get("GITHUB_REPOSITORY_OWNER")
+if owner:
+    assert f"uses: {owner}/{reusable}" in private_bundle, "Reusable workflow must point at the current account"
+else:
+    assert search(r"(?m)^    uses: [A-Za-z0-9-]+/" + reusable.replace(".", r"\.") + r"$", private_bundle), "Reusable workflow reference missing"
+assert private_bundle.count("https://api.github.com/repositories/1412760928") == 2
 for required in (
     "GITHUB_REPOSITORY_ID", "1449162585", "fmsc-sandbox-fixtures/v1",
     "validated-schema-only", "Get-FileHash", "SHA256",

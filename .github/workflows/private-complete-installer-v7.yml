@@ -32,9 +32,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          api='https://api.github.com/repos/farhan2166-creator/FMSC-Source'
-          repo="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' "$api")"
+          repo="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' 'https://api.github.com/repositories/1412760928')"
           jq -e '.id == 1412760928 and .owner.id == 316891609 and .private == false and .default_branch == "main"' <<<"$repo" >/dev/null
+          api="$(jq -r '.url' <<<"$repo")"
           sha="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' "$api/branches/main" | jq -r '.commit.sha')"
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid Source commit'; exit 1; }
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
@@ -59,7 +59,7 @@ jobs:
   # private Sandbox workflow run. Its output remains database-free.
   package-base:
     needs: resolve-source
-    uses: farhan2166-creator/FMSC-Source/.github/workflows/fmsc-complete-installer.yml@main
+    uses: xynterix/FMSC-Source/.github/workflows/fmsc-complete-installer.yml@main
     with:
       source_sha: ${{ needs.resolve-source.outputs.sha }}
     secrets:
@@ -109,8 +109,8 @@ jobs:
           SOURCE_SHA: ${{ needs.resolve-source.outputs.sha }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $api = 'https://api.github.com/repos/farhan2166-creator/FMSC-Source'
-          $repo = Invoke-RestMethod -Uri $api
+          $repo = Invoke-RestMethod -Uri 'https://api.github.com/repositories/1412760928'
+          $api = $repo.url
           if ($repo.id -ne 1412760928 -or $repo.owner.id -ne 316891609 -or $repo.private) {
               throw 'Source repository identity unexpectedly changed.'
           }
