@@ -98,6 +98,12 @@ else:
     assert search(r"(?m)^    uses: [A-Za-z0-9-]+/" + reusable.replace(".", r"\.") + r"$", private_bundle), "Reusable workflow reference missing"
 assert 'api="https://api.github.com/repos/${GITHUB_REPOSITORY_OWNER}/FMSC-Source"' in private_bundle
 assert '$api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY_OWNER/FMSC-Source"' in private_bundle
+# Runner GitHub API calls must use the automatically issued token, otherwise
+# unauthenticated calls can fail with HTTP 403 under public IP rate limits.
+assert private_bundle.count('GITHUB_TOKEN: ${{ github.token }}') >= 2
+assert private_bundle.count('-H "Authorization: Bearer $GITHUB_TOKEN"') == 2
+assert 'Invoke-RestMethod -Uri $api -Headers $authHeaders' in private_bundle
+assert 'Invoke-RestMethod -Uri "$api/branches/main" -Headers $authHeaders' in private_bundle
 assert "https://api.github.com/repositories/1412760928" not in private_bundle
 for required in (
     "GITHUB_REPOSITORY_ID", "1449162585", "fmsc-sandbox-fixtures/v1",

@@ -30,12 +30,14 @@ jobs:
       - name: Pin exact FMSC-Source main commit and verify repository identity
         id: source
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           api="https://api.github.com/repos/${GITHUB_REPOSITORY_OWNER}/FMSC-Source"
-          repo="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' "$api")"
+          repo="$(curl -fsSL --retry 3 -H "Authorization: Bearer $GITHUB_TOKEN" -H 'Accept: application/vnd.github+json' "$api")"
           jq -e '.id == 1412760928 and .owner.id == 316891609 and .private == false and .default_branch == "main"' <<<"$repo" >/dev/null
-          sha="$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' "$api/branches/main" | jq -r '.commit.sha')"
+          sha="$(curl -fsSL --retry 3 -H "Authorization: Bearer $GITHUB_TOKEN" -H 'Accept: application/vnd.github+json' "$api/branches/main" | jq -r '.commit.sha')"
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid Source commit'; exit 1; }
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "Private installer Source revision: $sha" >> "$GITHUB_STEP_SUMMARY"
@@ -107,14 +109,16 @@ jobs:
         shell: pwsh
         env:
           SOURCE_SHA: ${{ needs.resolve-source.outputs.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
           $api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY_OWNER/FMSC-Source"
-          $repo = Invoke-RestMethod -Uri $api
+          $authHeaders = @{ Authorization = "Bearer $env:GITHUB_TOKEN"; Accept = 'application/vnd.github+json' }
+          $repo = Invoke-RestMethod -Uri $api -Headers $authHeaders
           if ($repo.id -ne 1412760928 -or $repo.owner.id -ne 316891609 -or $repo.private) {
               throw 'Source repository identity unexpectedly changed.'
           }
-          $current = (Invoke-RestMethod -Uri "$api/branches/main").commit.sha
+          $current = (Invoke-RestMethod -Uri "$api/branches/main" -Headers $authHeaders).commit.sha
           if ($current -cne $env:SOURCE_SHA) {
               throw 'Source/main moved during private packaging; rerun for the current revision.'
           }
