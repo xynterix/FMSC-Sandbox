@@ -164,9 +164,24 @@ jobs:
         env:
           FMSC_FIXTURE_READ_TOKEN: ${{ github.token }}
         run: ./sandbox-harness/Tests/FetchPinnedFixture.ps1 -Schema 7 -FixtureRoot (Join-Path $env:GITHUB_WORKSPACE 'fmsc-sandbox')
+      # Match the exact pinned Source commit's actual production target.
+      # The trusted main-only SHA attestation and immutable SQL fixtures stay unchanged.
+      - name: Select SDK from pinned Source project
+        id: source-sdk
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content -LiteralPath 'FMSC_SMS.csproj' -Raw
+          $targets = @($project.SelectNodes('/Project/PropertyGroup/TargetFramework'))
+          if ($targets.Count -ne 1) { throw 'Source project must declare exactly one production target framework.' }
+          $sdk = switch ($targets[0].InnerText) {
+            'net8.0-windows' { '8.0.x' }
+            'net10.0-windows' { '10.0.x' }
+            default { throw 'Unsupported Source application target framework for private acceptance.' }
+          }
+          "version=$sdk" >> $env:GITHUB_OUTPUT
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: ${{ steps.source-sdk.outputs.version }}
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
