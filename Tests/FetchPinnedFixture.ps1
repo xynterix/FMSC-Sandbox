@@ -17,7 +17,12 @@ $workspace = [IO.Path]::GetFullPath($env:GITHUB_WORKSPACE).TrimEnd([IO.Path]::Di
 if (-not $root.StartsWith($workspace + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
     throw 'Fixture checkout must be an isolated directory inside the runner workspace.'
 }
-$pin = '7d225d2b8e38aecd4a1c3cfa7ccfaf56685149b9'
+# These exact commits contain the approved schema-only snapshots. Never follow main for SQL fixture bytes.
+$pin = switch ($Schema) {
+    3 { '6849fc6702b48cf0f9ee64ef48aed59cddd14b3a' }
+    7 { '7d225d2b8e38aecd4a1c3cfa7ccfaf56685149b9' }
+    default { throw 'Unsupported historical SQL fixture schema.' }
+}
 $head = (& git -C $root rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $head -cne $pin) { throw 'Refusing unpinned fixture checkout.' }
 $manifest = Get-Content -LiteralPath (Join-Path $root 'Tests/manifest.json') -Raw | ConvertFrom-Json
