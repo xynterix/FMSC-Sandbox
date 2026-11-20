@@ -57,7 +57,8 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: ${{ github.repository }}
-          ref: 5a8c5130c9d7b76552bb73a753cd44c4d192d2d0
+          # Frozen synthetic v3 typed-GUID snapshot, verified and merged in PR #29.
+          ref: 6849fc6702b48cf0f9ee64ef48aed59cddd14b3a
           path: fmsc-sandbox
           lfs: true
           persist-credentials: false
