@@ -22,18 +22,17 @@ jobs:
       FMSC_DISPOSABLE_INSTALL: approved-synthetic-only
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
     steps:
-      - name: Checkout isolated Sandbox branch without stored credentials
-        uses: actions/checkout@v7
-        with:
-          path: fmsc-sandbox
-          lfs: true
-          persist-credentials: false
       - name: Checkout public Source/main without stored credentials
         uses: actions/checkout@v7
         with:
           repository: xynterix/FMSC-Source
           ref: main
-          path: fmsc-source
+          persist-credentials: false
+      - name: Checkout isolated Sandbox branch without stored credentials
+        uses: actions/checkout@v7
+        with:
+          path: fmsc-sandbox
+          lfs: true
           persist-credentials: false
       - name: Guard repository identity and Source main revision
         shell: pwsh
@@ -43,7 +42,7 @@ jobs:
           if ($source.id -ne 1412760928 -or $source.owner.id -ne 316891609 -or $source.private) {
             throw 'Unexpected Source repository.'
           }
-          $sourceHead=(git -C fmsc-source rev-parse HEAD).Trim()
+          $sourceHead=(git rev-parse HEAD).Trim()
           $branchHead=(git -C fmsc-sandbox rev-parse HEAD).Trim()
           if ($branchHead -cne '${{ github.sha }}') { throw 'Sandbox branch changed during checkout.' }
           $actualSource=(Invoke-RestMethod "https://api.github.com/repos/$($owner.login)/FMSC-Source/branches/main").commit.sha
@@ -57,7 +56,7 @@ jobs:
         shell: pwsh
         timeout-minutes: 22
         run: |
-          ./fmsc-sandbox/Tests/RunSandboxSqlContract.ps1 -Schema 3 -SourceRoot (Join-Path $env:GITHUB_WORKSPACE 'fmsc-source') -FixtureRoot (Join-Path $env:GITHUB_WORKSPACE 'fmsc-sandbox')
+          ./fmsc-sandbox/Tests/RunSandboxSqlContract.ps1 -Schema 3 -SourceRoot $env:GITHUB_WORKSPACE -FixtureRoot (Join-Path $env:GITHUB_WORKSPACE 'fmsc-sandbox')
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
@@ -65,7 +64,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Verify real Windows installer updater and recovery with repaired v3 copy
-        working-directory: fmsc-source
+        working-directory: .
         shell: pwsh
         timeout-minutes: 55
         run: |
