@@ -1,8 +1,8 @@
-# Permanent schema-3 fixture
+# Permanent synthetic schema-3 SQL fixture
 
-Place **only fictional and cleanly detached** files here:
+The detached MDF/LDF pair is synthetic and data-free, not a production school database.
+Its database schema remains **3**.
 
-- FMSC_DB.mdf
-- FMSC_DB_log.ldf
+On the one-time guarded Windows SQL repair, the FMSC_QuickRegistrationScope property was checked and normalized to a native SQL uniqueidentifier. Result: text GUID converted to native uniqueidentifier. The native GUID, synthetic ownership marker, and schema version were independently verified on copied files after detach/reattach, with DBCC CHECKDB.
 
-This historical baseline must stay at dbo.DatabaseVersion = 3. Do not upgrade or overwrite these master files after upload. CI will attach disposable copies only.
+The updated file hashes are recorded in Tests/manifest.json. The original fixture remains recoverable from Git history. Keep the master files frozen after review and acceptance. Migrate and seed only disposable copies; never add school or credential data.

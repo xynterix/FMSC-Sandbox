@@ -5,11 +5,11 @@
     {
       "id": "historical-v3",
       "schema": 3,
-      "status": "extracted-schema-only-pending-sql-validation",
+      "status": "validated-schema-only",
       "mdf": "Database/v3/FMSC_DB.mdf",
       "ldf": "Database/v3/FMSC_DB_log.ldf",
-      "mdfSha256": "27bd4ffbd1258212a6af4028a61820c490d0cb86d736d20c9ec4df2184cdf00d",
-      "ldfSha256": "8a5cb6d8b1301fa7e00ac2109ee4a9c2098c738eaba58686fed39637cd594d4b"
+      "mdfSha256": "1fa6d39ef70daff1d50a70d6bf2415edb444cdce2b70b68178860eda9bbb91a7",
+      "ldfSha256": "cd5cb086e486e961fa0e5e1e4c9dbe82a01ed838b64d1f7b0467270d17d4282b"
     },
     {
       "id": "fictional-v7",
