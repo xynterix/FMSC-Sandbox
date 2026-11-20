@@ -23,7 +23,8 @@ for value in ("https://api.github.com/user/316891609",
               "source_repo=$source_repo", "source_repo: ${{ steps.source.outputs.source_repo }}",
               "repository: ${{ needs.resolve.outputs.source_repo }}",
               "repository: ${{ github.repository }}",
-              "ref: 7d225d2b8e38aecd4a1c3cfa7ccfaf56685149b9",
+              "6849fc6702b48cf0f9ee64ef48aed59cddd14b3a",
+              "7d225d2b8e38aecd4a1c3cfa7ccfaf56685149b9",
               "needs: [resolve, sql-contract, real-installer]",
               "fmsc/sandbox-mdf-ldf/v2",
               "SOURCE_SHA", "SQL_RESULT", "INSTALL_RESULT",
@@ -50,28 +51,33 @@ assert '-H "Authorization: Bearer $GITHUB_TOKEN"' in accept
 
 assert "1449162585" in retention and "316891609" in retention
 assert "GITHUB_REPOSITORY_OWNER_ID" in harness
-# The publication gate now validates the latest supported historical baseline (v7).
-# v3 failure/restore rehearsals remain a separately invoked workflow.
-assert accept.count("schema: [7]") == 2
+# Both approved frozen historical baselines must be exercised by SQL and installer
+# matrix jobs; any one failing prevents the aggregate success attestation.
+# Extra v3 fault injection remains separately available, not part of this gate.
+assert accept.count("schema: [3,7]") == 2
+assert accept.count("ref: ${{ matrix.schema == 3 &&") == 2
+assert "schema: [7]" not in accept
 assert "matrix.schema" in accept
 assert "migration-chaos:" not in accept
 assert "workflow_dispatch:" in chaos
 assert "RunHistoricalMigrationChaos.ps1" in chaos
-assert "FetchPinnedFixture.ps1 -Schema 7" in accept
+assert accept.count("FetchPinnedFixture.ps1 -Schema ${{ matrix.schema }}") == 2
 assert accept.count("lfs: false") == 2
 assert "lfs: true" not in accept
 
 fixture_hydrator = (root / "Tests/FetchPinnedFixture.ps1").read_text(encoding="utf-8")
 for required in (
     "FMSC_FIXTURE_READ_TOKEN", "GITHUB_REPOSITORY_ID",
+    "6849fc6702b48cf0f9ee64ef48aed59cddd14b3a",
     "7d225d2b8e38aecd4a1c3cfa7ccfaf56685149b9",
+    "3 {", "7 {",
     "lfs pull --include=", "Get-FileHash", "SHA256",
     "FMSC_DB.mdf", "FMSC_DB_log.ldf",
 ):
     assert required in fixture_hydrator, f"Pinned selective-LFS verification missing: {required}"
 assert "persist-credentials: false" in accept
 assert "GIT_LFS_SKIP_SMUDGE: '1'" in accept
-print("PASS: immutable IDs, exact-commit v7 SQL/installer gate and separate manual v3 chaos.")
+print("PASS: immutable IDs, exact-commit mandatory v3/v7 SQL+installer gate and separate manual historical chaos.")
 
 private_bundle = (root / ".github/workflows/private-complete-installer-v7.yml").read_text(encoding="utf-8")
 private_packager = (root / "Tests/PackageCompleteInstallerV7.ps1").read_text(encoding="utf-8")
